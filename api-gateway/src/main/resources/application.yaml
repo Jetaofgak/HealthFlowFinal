@@ -63,6 +63,14 @@ spring:
           filters:
             - RewritePath=/api/v1/scores/(?<segment>.*), /api/v1/scores/${segment}
 
+        # Route vers AuditFairness
+        - id: audit-fairness-service
+          uri: ${AUDIT_FAIRNESS_URL:http://localhost:5004}
+          predicates:
+            - Path=/api/v1/audit/**
+          filters:
+            - RewritePath=/api/v1/audit/(?<segment>.*), /${segment}
+
         # Route pour health check global
         - id: gateway-health
           uri: http://localhost:8080

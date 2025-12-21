@@ -7,12 +7,6 @@ ENV UV_HTTP_TIMEOUT=300
 
 WORKDIR /app
 
-# Install system dependencies
-RUN apt-get update && apt-get install -y \
-    gcc \
-    postgresql-client \
-    && rm -rf /var/lib/apt/lists/*
-
 # Copy requirements and install dependencies
 COPY requirements.txt .
 RUN uv pip install -r requirements.txt
@@ -21,7 +15,7 @@ RUN uv pip install -r requirements.txt
 COPY . .
 
 # Expose port
-EXPOSE 5003
+EXPOSE 5004
 
-# Run with Uvicorn
-CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "5003", "--reload"]
+# Run app
+CMD ["python", "app.py"]

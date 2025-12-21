@@ -101,6 +101,21 @@ services:
     depends_on:
       - ml-predictor
 
+  # AuditFairness Service
+  audit-fairness:
+    build:
+      context: ./audit-fairness
+      dockerfile: Dockerfile
+    container_name: healthflow-audit-fairness
+    ports:
+      - "5004:5004"
+    environment:
+      SQLALCHEMY_DATABASE_URI: postgresql://postgres:qwerty@postgres:5432/healthflow_fhir
+      PORT: 5004
+    depends_on:
+      postgres:
+        condition: service_healthy
+
   # API Gateway (Java)
   api-gateway:
     build:
@@ -115,6 +130,7 @@ services:
       FEATURIZER_URL: http://featurizer:5001
       ML_PREDICTOR_URL: http://ml-predictor:5002
       SCORE_API_URL: http://score-api:5003
+      AUDIT_FAIRNESS_URL: http://audit-fairness:5004
     depends_on:
       - proxy-fhir
       - deid
