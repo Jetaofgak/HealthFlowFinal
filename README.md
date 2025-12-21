@@ -182,8 +182,18 @@ python train.py  # Automatically uses dataset_with_nlp.csv
 cp xgboost_readmission_model.ubj ml-predictor/
 docker-compose restart ml-predictor
 
-# 8. Access dashboard to see improved predictions
+# 9. Populate microservice tables for dashboard (IMPORTANT!)
+cd scripts
+psql -h localhost -p 5433 -U postgres -d healthflow_fhir -f populate_microservice_tables.sql
+# → Populates patient_features (3,607 rows) from dataset_final
+
+# 10. Generate predictions using ML-Predictor service
+curl -X POST http://localhost:8085/api/v1/predictions/predict/all
+# → Creates 3,607 risk predictions using the trained XGBoost model
+
+# 11. Access dashboard to see predictions
 open http://localhost:3000
+# Dashboard should now display all patient data and predictions
 ```
 
 ## 💾 Database Backup & Restore
@@ -275,6 +285,7 @@ curl http://localhost:8080/health  # API Gateway
 - **Setup Guide**: [docs/SYNTHEA_SETUP.md](docs/SYNTHEA_SETUP.md)
 - **Quick Start**: [docs/QUICK_START_SYNTHEA.md](docs/QUICK_START_SYNTHEA.md)
 - **Project Overview**: [project.md](project.md)
+- **Dashboard Issue Fix**: [PROBLEM.md](PROBLEM.md) - Troubleshooting dashboard zeros/N/A values
 
 ## 🛠️ Troubleshooting
 
@@ -309,6 +320,39 @@ All services are configured to allow CORS from `localhost:3000`. If issues persi
 docker-compose build deid featurizer ml-predictor score-api
 docker-compose up -d
 ```
+
+### Dashboard Showing Zeros or N/A
+
+If the dashboard displays all zeros or N/A values despite having data in the database:
+
+**Cause**: Microservice tables (`patient_features`, `risk_predictions`) are empty
+
+**Solution**:
+```bash
+# 1. Verify dataset exists
+export PGPASSWORD='qwerty'
+psql -h localhost -p 5433 -U postgres -d healthflow_fhir -c "SELECT COUNT(*) FROM dataset_final;"
+# Should show 3,607 rows
+
+# 2. Populate microservice tables
+cd scripts
+psql -h localhost -p 5433 -U postgres -d healthflow_fhir -f populate_microservice_tables.sql
+
+# 3. Generate predictions
+curl -X POST http://localhost:8085/api/v1/predictions/predict/all
+
+# 4. Verify data
+psql -h localhost -p 5433 -U postgres -d healthflow_fhir -c "
+  SELECT 'patient_features', COUNT(*) FROM patient_features
+  UNION ALL
+  SELECT 'risk_predictions', COUNT(*) FROM risk_predictions;"
+# Both should show 3,607 rows
+
+# 5. Refresh dashboard
+open http://localhost:3000
+```
+
+**See [PROBLEM.md](PROBLEM.md) for detailed explanation**
 
 ## 👥 Team
 
