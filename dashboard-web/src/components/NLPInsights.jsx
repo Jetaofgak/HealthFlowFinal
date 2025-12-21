@@ -6,7 +6,6 @@ import {
     Card,
     CardContent,
     Chip,
-    TextField,
     Skeleton,
     Alert,
     LinearProgress,
@@ -18,7 +17,6 @@ export default function NLPInsights() {
     const [features, setFeatures] = useState([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
-    const [searchTerm, setSearchTerm] = useState('');
 
     useEffect(() => {
         loadFeatures();
@@ -26,34 +24,49 @@ export default function NLPInsights() {
 
     const loadFeatures = async () => {
         setLoading(true);
+        setError(null);
         try {
             const data = await getFeatures();
-            setFeatures(data);
-        } catch (error) {
-            console.error('Error loading features:', error);
-            setError('Failed to load NLP insights data');
+            // Ensure we always have an array
+            setFeatures(Array.isArray(data) ? data : []);
+        } catch (err) {
+            console.error('Error loading features:', err);
+            setError('Failed to load NLP insights data. Services may be starting up.');
+            setFeatures([]);
         } finally {
             setLoading(false);
         }
     };
 
-    // Aggregate NLP statistics
+    // Safe filter helper - handles null/undefined and non-array data
+    const safeFilter = (arr, predicate) => {
+        if (!Array.isArray(arr)) return [];
+        return arr.filter(predicate);
+    };
+
+    // Safe reduce helper
+    const safeReduce = (arr, reducer, initial) => {
+        if (!Array.isArray(arr)) return initial;
+        return arr.reduce(reducer, initial);
+    };
+
+    // Aggregate NLP statistics with safe operations
     const nlpStats = {
         totalPatients: features.length,
-        patientsWithDiabetes: features.filter((f) => f.nlp_has_diabetes === 1).length,
-        patientsWithHypertension: features.filter((f) => f.nlp_has_hypertension === 1).length,
-        patientsWithChf: features.filter((f) => f.nlp_has_chf === 1).length,
-        patientsWithCopd: features.filter((f) => f.nlp_has_copd === 1).length,
-        patientsWithPolypharmacy: features.filter((f) => f.nlp_polypharmacy === 1).length,
+        patientsWithDiabetes: safeFilter(features, (f) => f?.nlp_has_diabetes === 1).length,
+        patientsWithHypertension: safeFilter(features, (f) => f?.nlp_has_hypertension === 1).length,
+        patientsWithChf: safeFilter(features, (f) => f?.nlp_has_chf === 1).length,
+        patientsWithCopd: safeFilter(features, (f) => f?.nlp_has_copd === 1).length,
+        patientsWithPolypharmacy: safeFilter(features, (f) => f?.nlp_polypharmacy === 1).length,
         avgConditions: features.length > 0
-            ? (features.reduce((sum, f) => sum + (f.nlp_num_conditions || 0), 0) / features.length).toFixed(1)
-            : 0,
+            ? (safeReduce(features, (sum, f) => sum + (f?.nlp_num_conditions || 0), 0) / features.length).toFixed(1)
+            : '0',
         avgMedications: features.length > 0
-            ? (features.reduce((sum, f) => sum + (f.nlp_num_medications || 0), 0) / features.length).toFixed(1)
-            : 0,
+            ? (safeReduce(features, (sum, f) => sum + (f?.nlp_num_medications || 0), 0) / features.length).toFixed(1)
+            : '0',
         avgSymptoms: features.length > 0
-            ? (features.reduce((sum, f) => sum + (f.nlp_num_symptoms || 0), 0) / features.length).toFixed(1)
-            : 0,
+            ? (safeReduce(features, (sum, f) => sum + (f?.nlp_num_symptoms || 0), 0) / features.length).toFixed(1)
+            : '0',
     };
 
     // Condition data for word cloud
@@ -96,8 +109,14 @@ export default function NLPInsights() {
             </Box>
 
             {error && (
-                <Alert severity="error" sx={{ mb: 3 }} onClose={() => setError(null)}>
+                <Alert severity="warning" sx={{ mb: 3 }} onClose={() => setError(null)}>
                     {error}
+                </Alert>
+            )}
+
+            {features.length === 0 && !loading && (
+                <Alert severity="info" sx={{ mb: 3 }}>
+                    No patient data available. Run the Pipeline to sync and process patient data first.
                 </Alert>
             )}
 
@@ -224,7 +243,7 @@ export default function NLPInsights() {
                                     </Typography>
                                     <LinearProgress
                                         variant="determinate"
-                                        value={parseFloat(percentage)}
+                                        value={parseFloat(percentage) || 0}
                                         sx={{
                                             mt: 1,
                                             height: 4,
