@@ -17,7 +17,7 @@ def create_app(config_name='development'):
     app.config.from_object(config[config_name])
 
     # CORS
-    CORS(app, resources={r"/api/*": {"origins": "*"}})
+    CORS(app, resources={r"/*": {"origins": "*"}})
 
     # JWT
     jwt = JWTManager(app)

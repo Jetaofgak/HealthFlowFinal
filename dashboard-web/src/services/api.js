@@ -9,17 +9,41 @@ const api = axios.create({
   },
 });
 
-// Health checks
-export const checkHealth = async (service) => {
-  const endpoints = {
-    fhir: '/fhir/health',
-    deid: '/deid/health',
-    features: '/features/health',
-    predictions: '/predictions/health',
-  };
-  const response = await api.get(endpoints[service]);
-  return response.data;
+// Health checks for all services
+export const checkAllServicesHealth = async () => {
+  const services = [
+    { name: 'DeID', port: 5000, path: '/health' },
+    { name: 'Featurizer', port: 5001, path: '/health' },
+    { name: 'ML-Predictor', port: 5002, path: '/health' },
+    { name: 'ScoreAPI', port: 5003, path: '/health' },
+    { name: 'API Gateway', port: 8080, path: '/health' },
+  ];
+
+  const healthChecks = await Promise.allSettled(
+    services.map(async (service) => {
+      try {
+        const response = await axios.get(`http://localhost:${service.port}${service.path}`);
+        return {
+          name: service.name,
+          status: 'healthy',
+          details: response.data,
+        };
+      } catch (error) {
+        return {
+          name: service.name,
+          status: 'unhealthy',
+          error: error.message,
+        };
+      }
+    })
+  );
+
+  return healthChecks.map((result, index) => ({
+    ...services[index],
+    ...(result.status === 'fulfilled' ? result.value : { status: 'error', error: result.reason }),
+  }));
 };
+
 
 // Features API
 export const getFeatures = async () => {

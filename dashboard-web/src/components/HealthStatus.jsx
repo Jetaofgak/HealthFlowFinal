@@ -1,4 +1,3 @@
- 
 import { useEffect, useState } from 'react';
 import {
   Grid,
@@ -9,16 +8,11 @@ import {
   Box,
   CircularProgress,
 } from '@mui/material';
-import { CheckCircle, Error } from '@mui/icons-material';
-import { checkHealth } from '../services/api';
+import { CheckCircle, Error, Warning } from '@mui/icons-material';
+import { checkAllServicesHealth } from '../services/api';
 
 function HealthStatus() {
-  const [statuses, setStatuses] = useState({
-    fhir: null,
-    deid: null,
-    features: null,
-    predictions: null,
-  });
+  const [services, setServices] = useState([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -28,83 +22,83 @@ function HealthStatus() {
   }, []);
 
   const loadHealthStatus = async () => {
-    const services = ['fhir', 'deid', 'features', 'predictions'];
-    const results = {};
-
-    for (const service of services) {
-      try {
-        const response = await checkHealth(service);
-        results[service] = { status: 'UP', data: response };
-      } catch (error) {
-        results[service] = { status: 'DOWN', error: error.message };
-      }
+    try {
+      const results = await checkAllServicesHealth();
+      setServices(results);
+    } catch (error) {
+      console.error('Failed to load health status:', error);
+    } finally {
+      setLoading(false);
     }
-
-    setStatuses(results);
-    setLoading(false);
   };
 
   if (loading) {
-    return <CircularProgress />;
+    return (
+      <Box display="flex" justifyContent="center" alignItems="center" minHeight="400px">
+        <CircularProgress />
+      </Box>
+    );
   }
 
-  const ServiceCard = ({ name, displayName, status }) => (
-    <Card>
-      <CardContent>
-        <Box display="flex" justifyContent="space-between" alignItems="center">
-          <Typography variant="h6">{displayName}</Typography>
-          <Chip
-            icon={status?.status === 'UP' ? <CheckCircle /> : <Error />}
-            label={status?.status || 'UNKNOWN'}
-            color={status?.status === 'UP' ? 'success' : 'error'}
-          />
-        </Box>
-        {status?.data && (
-          <Box sx={{ mt: 2 }}>
-            <Typography variant="body2" color="text.secondary">
-              {JSON.stringify(status.data, null, 2)}
-            </Typography>
+  const ServiceCard = ({ service }) => {
+    const isHealthy = service.status === 'healthy';
+    const statusColor = isHealthy ? 'success' : 'error';
+    const StatusIcon = isHealthy ? CheckCircle : Error;
+
+    return (
+      <Card>
+        <CardContent>
+          <Box display="flex" justifyContent="space-between" alignItems="center">
+            <Typography variant="h6">{service.name}</Typography>
+            <Chip
+              icon={<StatusIcon />}
+              label={service.status.toUpperCase()}
+              color={statusColor}
+            />
           </Box>
-        )}
-      </CardContent>
-    </Card>
-  );
+          <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
+            Port: {service.port}
+          </Typography>
+          {service.details && (
+            <Box sx={{ mt: 2, p: 1, bgcolor: 'grey.100', borderRadius: 1 }}>
+              <Typography variant="caption" component="pre" sx={{ fontSize: '0.75rem' }}>
+                {JSON.stringify(service.details, null, 2)}
+              </Typography>
+            </Box>
+          )}
+          {service.error && (
+            <Typography variant="body2" color="error" sx={{ mt: 1 }}>
+              Error: {service.error}
+            </Typography>
+          )}
+        </CardContent>
+      </Card>
+    );
+  };
+
+  const healthyCount = services.filter(s => s.status === 'healthy').length;
+  const totalCount = services.length;
 
   return (
     <div>
-      <Typography variant="h4" gutterBottom>
-        Microservices Health Status
-      </Typography>
+      <Box display="flex" justifyContent="space-between" alignItems="center" mb={3}>
+        <Typography variant="h4">
+          Microservices Health Status
+        </Typography>
+        <Chip
+          icon={healthyCount === totalCount ? <CheckCircle /> : <Warning />}
+          label={`${healthyCount}/${totalCount} Services Healthy`}
+          color={healthyCount === totalCount ? 'success' : 'warning'}
+          size="large"
+        />
+      </Box>
 
       <Grid container spacing={3}>
-        <Grid item xs={12} md={6}>
-          <ServiceCard
-            name="fhir"
-            displayName="ProxyFHIR Service"
-            status={statuses.fhir}
-          />
-        </Grid>
-        <Grid item xs={12} md={6}>
-          <ServiceCard
-            name="deid"
-            displayName="DeID Service"
-            status={statuses.deid}
-          />
-        </Grid>
-        <Grid item xs={12} md={6}>
-          <ServiceCard
-            name="features"
-            displayName="Featurizer Service"
-            status={statuses.features}
-          />
-        </Grid>
-        <Grid item xs={12} md={6}>
-          <ServiceCard
-            name="predictions"
-            displayName="ML Predictor Service"
-            status={statuses.predictions}
-          />
-        </Grid>
+        {services.map((service) => (
+          <Grid item xs={12} md={6} lg={4} key={service.name}>
+            <ServiceCard service={service} />
+          </Grid>
+        ))}
       </Grid>
     </div>
   );

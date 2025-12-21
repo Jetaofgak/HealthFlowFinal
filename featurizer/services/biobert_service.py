@@ -13,35 +13,46 @@ class BioBERTService:
         self.load_model()
 
     def load_model(self):
-        """Load BioBERT model for NER"""
+        """Load OpenMed NER model for better biomedical entity detection"""
         try:
-            logger.info(f"Loading BioBERT model: {self.model_name}")
+            import torch
+            logger.info(f"Loading OpenMed NER model (optimized for diseases/conditions)")
 
-            # Note: Using a BioBERT-based NER model
-            # For actual medical NER, consider using a fine-tuned model like:
-            # "d4data/biomedical-ner-all" or "allenai/scibert_scivocab_uncased"
+            # Use OpenMed's state-of-the-art disease detection model
+            # Achieves 92.7% F1 on BC5CDR-Disease (vs 85% for d4data/biomedical-ner-all)
+            model_name_ner = "OpenMed/OpenMed-NER-DiseaseDetect-SuperMedical-125M"
+            
+            tokenizer = AutoTokenizer.from_pretrained(model_name_ner)
+            model = AutoModelForTokenClassification.from_pretrained(model_name_ner)
 
-            tokenizer = AutoTokenizer.from_pretrained(self.model_name)
-            model = AutoModelForTokenClassification.from_pretrained("d4data/biomedical-ner-all")
+            # Enable MPS acceleration on Apple Silicon (2-5x speedup)
+            # Falls back to CPU if MPS not available
+            device = 0 if torch.backends.mps.is_available() else -1
+            device_name = "MPS (Apple Silicon)" if device == 0 else "CPU"
+            logger.info(f"Using device: {device_name}")
 
             self.ner_pipeline = pipeline(
                 "ner",
                 model=model,
                 tokenizer=tokenizer,
-                aggregation_strategy="simple"
+                aggregation_strategy="max",  # Better for handling split words
+                device=device
             )
 
-            logger.info("BioBERT NER model loaded successfully")
+            logger.info("OpenMed NER model loaded successfully")
 
         except Exception as e:
-            logger.error(f"Failed to load BioBERT model: {str(e)}")
+            logger.error(f"Failed to load OpenMed model: {str(e)}")
+            logger.info("Falling back to keyword-based extraction")
             # Fallback to simple extraction if model fails
             self.ner_pipeline = None
 
     def extract_medical_entities(self, clinical_text: str) -> Dict[str, List[str]]:
         """
-        Extract medical entities from clinical notes
-
+        Extract medical entities from clinical notes using hybrid approach:
+        - OpenMed NER for complex disease detection
+        - Keyword extraction for medications and simple conditions
+        
         Args:
             clinical_text: Raw clinical note text
 
@@ -51,47 +62,107 @@ class BioBERTService:
         if not clinical_text:
             return {}
 
+        # Start with keyword-based extraction (always works)
+        keyword_entities = self._simple_entity_extraction(clinical_text)
+        
         try:
             if self.ner_pipeline is None:
-                # Fallback: simple keyword extraction
-                return self._simple_entity_extraction(clinical_text)
+                return keyword_entities
 
-            # Run BioBERT NER
-            entities = self.ner_pipeline(clinical_text)
+            # Run OpenMed NER for disease detection
+            ner_results = self.ner_pipeline(clinical_text)
 
-            # Group entities by type
-            entity_dict = {}
-            for entity in entities:
-                entity_type = entity['entity_group']
-                entity_text = entity['word']
+            # Combine OpenMed diseases with keyword results
+            combined_entities = keyword_entities.copy()
+            
+            # Add OpenMed-detected diseases
+            if ner_results:
+                openmed_diseases = [entity['word'].strip() for entity in ner_results 
+                                   if entity.get('entity_group') == 'DISEASE']
+                
+                if openmed_diseases:
+                    # Merge with keyword-detected conditions
+                    existing_conditions = combined_entities.get('conditions', [])
+                    combined_entities['conditions'] = list(set(existing_conditions + openmed_diseases))
 
-                if entity_type not in entity_dict:
-                    entity_dict[entity_type] = []
-
-                if entity_text not in entity_dict[entity_type]:
-                    entity_dict[entity_type].append(entity_text)
-
-            return entity_dict
+            return combined_entities
 
         except Exception as e:
             logger.error(f"Entity extraction failed: {str(e)}")
-            return self._simple_entity_extraction(clinical_text)
+            # Fallback to keyword extraction
+            return keyword_entities
 
     def _simple_entity_extraction(self, text: str) -> Dict[str, List[str]]:
-        """Fallback simple keyword-based extraction"""
+        """Fallback simple keyword-based extraction optimized for Synthea notes"""
         import re
 
-        # Common medical keywords
-        conditions = ['diabetes', 'hypertension', 'copd', 'chf', 'mi', 'stroke',
-                     'pneumonia', 'sepsis', 'uti', 'cancer']
-        medications = ['aspirin', 'metformin', 'insulin', 'lisinopril', 'atorvastatin',
-                      'warfarin', 'heparin', 'furosemide']
+        # Comprehensive medical keywords (Synthea-optimized)
+        conditions = [
+            # Chronic diseases
+            'diabetes', 'diabetes mellitus', 'dm2', 'diabetic',
+            'hypertension', 'htn', 'high blood pressure', 'elevated blood pressure',
+            'copd', 'chronic obstructive', 'emphysema',
+            'chf', 'heart failure', 'congestive heart failure', 'cardiac failure',
+            'chronic kidney', 'ckd', 'renal disease', 'renal failure', 'kidney disease',
+            
+            # Acute conditions
+            'mi', 'myocardial infarction', 'heart attack',
+            'stroke', 'cerebrovascular', 'cva',
+            'pneumonia', 'lung infection',
+            'sepsis', 'septic', 'septicemia',
+            'uti', 'urinary tract infection',
+            
+            # Cancers
+            'cancer', 'malignancy', 'carcinoma', 'tumor', 'neoplasm',
+            
+            # Common Synthea conditions
+            'gingivitis', 'gingival disease', 'periodontal',
+            'asthma', 'reactive airway',
+            'obesity', 'overweight', 'bmi',
+            'depression', 'anxiety', 'mental health',
+            'arthritis', 'osteoarthritis', 'joint pain',
+            'anemia', 'iron deficiency',
+            'hyperlipidemia', 'high cholesterol', 'dyslipidemia',
+        ]
+        
+        medications = [
+            # Diabetes medications
+            'aspirin', 'metformin', 'insulin', 'glipizide', 'glyburide',
+            
+            # Cardiovascular medications
+            'lisinopril', 'enalapril', 'ramipril', 'ace inhibitor',
+            'atorvastatin', 'simvastatin', 'statin', 'lipitor',
+            'metoprolol', 'atenolol', 'beta blocker', 'carvedilol',
+            'amlodipine', 'calcium channel blocker',
+            
+            # Anticoagulants
+            'warfarin', 'heparin', 'apixaban', 'rivaroxaban',
+            
+            # Diuretics
+            'furosemide', 'lasix', 'hydrochlorothiazide', 'hctz',
+            
+            # Common Synthea medications
+            'ibuprofen', 'acetaminophen', 'tylenol',
+            'amoxicillin', 'antibiotic',
+        ]
+        
+        symptoms = [
+            'pain', 'ache', 'discomfort', 'soreness',
+            'dyspnea', 'shortness of breath', 'sob', 'difficulty breathing',
+            'fatigue', 'tired', 'weakness',
+            'nausea', 'vomiting', 'emesis',
+            'fever', 'elevated temperature',
+            'cough', 'productive cough',
+            'edema', 'swelling',
+            'dizziness', 'lightheaded',
+        ]
 
         text_lower = text.lower()
 
         found_entities = {
             'conditions': [c for c in conditions if c in text_lower],
-            'medications': [m for m in medications if m in text_lower]
+            'medications': [m for m in medications if m in text_lower],
+            'symptoms': [s for s in symptoms if s in text_lower],
         }
 
         return {k: v for k, v in found_entities.items() if v}

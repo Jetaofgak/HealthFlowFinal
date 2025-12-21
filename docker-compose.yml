@@ -27,8 +27,6 @@ services:
       - "8081:8081"
     environment:
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/healthflow_fhir
-      SPRING_DATASOURCE_USERNAME: postgres
-      SPRING_DATASOURCE_PASSWORD: qwerty
     depends_on:
       postgres:
         condition: service_healthy
@@ -44,6 +42,8 @@ services:
     environment:
       SQLALCHEMY_DATABASE_URI: postgresql://postgres:qwerty@postgres:5432/healthflow_fhir
       PORT: 5000
+      DB_HOST: postgres
+      DB_PORT: 5432
     depends_on:
       postgres:
         condition: service_healthy
@@ -59,6 +59,8 @@ services:
     environment:
       SQLALCHEMY_DATABASE_URI: postgresql://postgres:qwerty@postgres:5432/healthflow_fhir
       PORT: 5001
+      DB_HOST: postgres
+      DB_PORT: 5432
     depends_on:
       postgres:
         condition: service_healthy
@@ -74,6 +76,8 @@ services:
     environment:
       SQLALCHEMY_DATABASE_URI: postgresql://postgres:qwerty@postgres:5432/healthflow_fhir
       PORT: 5002
+      DB_HOST: postgres
+      DB_PORT: 5432
       XGBOOST_MODEL_PATH: /app/xgboost_readmission_model.json
     volumes:
       - ./xgboost_readmission_model.json:/app/xgboost_readmission_model.json:ro
@@ -106,11 +110,11 @@ services:
     ports:
       - "8080:8080"
     environment:
-      SPRING_CLOUD_GATEWAY_ROUTES_0_URI: http://proxy-fhir:8081
-      SPRING_CLOUD_GATEWAY_ROUTES_1_URI: http://deid:5000
-      SPRING_CLOUD_GATEWAY_ROUTES_2_URI: http://featurizer:5001
-      SPRING_CLOUD_GATEWAY_ROUTES_3_URI: http://ml-predictor:5002
-      SPRING_CLOUD_GATEWAY_ROUTES_4_URI: http://score-api:5003
+      PROXY_FHIR_URL: http://proxy-fhir:8081
+      DEID_URL: http://deid:5000
+      FEATURIZER_URL: http://featurizer:5001
+      ML_PREDICTOR_URL: http://ml-predictor:5002
+      SCORE_API_URL: http://score-api:5003
     depends_on:
       - proxy-fhir
       - deid
