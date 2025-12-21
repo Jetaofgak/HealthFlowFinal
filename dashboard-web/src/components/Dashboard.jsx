@@ -139,7 +139,7 @@ function Dashboard() {
         <Grid item xs={12} sm={6} md={3}>
           <StatsCard
             title="Average Age"
-            value={featureStats?.average_age ? `${featureStats.average_age.toFixed(1)} yrs` : 'N/A'}
+            value={featureStats?.average_age ? `${parseFloat(featureStats.average_age).toFixed(1)} yrs` : 'N/A'}
             icon={Favorite}
             color="info"
             subtitle="Patient cohort"
@@ -238,7 +238,7 @@ function Dashboard() {
                     </Typography>
                     <Typography variant="h5" fontWeight={700}>
                       {predictionStats?.average_framingham_score
-                        ? `${(predictionStats.average_framingham_score * 100).toFixed(1)}%`
+                        ? `${(parseFloat(predictionStats.average_framingham_score) * 100).toFixed(1)}%`
                         : 'N/A'}
                     </Typography>
                   </Box>
@@ -283,7 +283,7 @@ function Dashboard() {
             <Grid item xs={12} md={3}>
               <Box textAlign="center">
                 <Typography variant="h4" fontWeight={700} color="primary.main">
-                  {featureStats?.average_bmi?.toFixed(1) || 'N/A'}
+                  {featureStats?.average_bmi ? parseFloat(featureStats.average_bmi).toFixed(1) : 'N/A'}
                 </Typography>
                 <Typography variant="body2" color="text.secondary">
                   Average BMI
@@ -293,7 +293,7 @@ function Dashboard() {
             <Grid item xs={12} md={3}>
               <Box textAlign="center">
                 <Typography variant="h4" fontWeight={700} color="warning.main">
-                  {featureStats?.average_cholesterol?.toFixed(0) || 'N/A'}
+                  {featureStats?.average_cholesterol ? parseFloat(featureStats.average_cholesterol).toFixed(0) : 'N/A'}
                 </Typography>
                 <Typography variant="body2" color="text.secondary">
                   Avg Cholesterol (mg/dL)
