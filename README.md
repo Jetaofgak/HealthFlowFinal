@@ -186,6 +186,38 @@ docker-compose restart ml-predictor
 open http://localhost:3000
 ```
 
+## 💾 Database Backup & Restore
+
+**Skip the entire workflow!** Share the pre-built database with your team.
+
+### **Create Backup** (You - once)
+
+```bash
+cd scripts
+python backup_database.py
+# → Creates database_backups/healthflow_db.sql.gz (1.27 GB)
+# → Contains: 3,607 patients, 2M+ observations, 292K encounters
+```
+
+### **Restore Backup** (Team - instant setup)
+
+```bash
+# 1. Clone repository
+git clone https://github.com/Jetaofgak/HealthFlowFinal.git
+cd HealthFlowFinal
+
+# 2. Start Docker
+docker-compose up -d
+
+# 3. Restore database (cross-platform: Windows/Mac/Linux)
+cd scripts
+python restore_database.py database_backups/healthflow_db.sql.gz
+
+# 4. Ready! Skip to step 6 (NLP) or step 7 (training)
+```
+
+**Benefits**: Saves 2+ hours, identical data, cross-platform, Git LFS tracked
+
 ### Quick Workflow (Structured Features Only)
 
 If you want to skip BioBERT and use only structured features:
