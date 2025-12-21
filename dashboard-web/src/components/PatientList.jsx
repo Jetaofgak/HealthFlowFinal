@@ -16,7 +16,7 @@ import {
 } from '@mui/material';
 import { Search, FilterList, SortByAlpha } from '@mui/icons-material';
 import PatientCard from './PatientCard';
-import { getFeatures, getPredictions } from '../services/api';
+import { getPatients } from '../services/api';
 
 const PATIENTS_PER_PAGE = 12;
 
@@ -37,22 +37,8 @@ export default function PatientList() {
     setLoading(true);
     setError(null);
     try {
-      const [features, predictions] = await Promise.all([
-        getFeatures(),
-        getPredictions(),
-      ]);
-
-      // Merge features with predictions
-      const merged = features.map((feature) => {
-        const prediction = predictions.find((p) => p.patient_id === feature.patient_id);
-        return {
-          ...feature,
-          risk_score: prediction?.risk_score || prediction?.framingham_score || 0,
-          risk_level: prediction?.risk_level || 'unknown',
-        };
-      });
-
-      setPatients(merged);
+      const patientsData = await getPatients();
+      setPatients(patientsData);
     } catch (error) {
       console.error('Error loading patients:', error);
       setError('Failed to load patient data. Please check if services are running.');

@@ -187,6 +187,23 @@ export const getPatientPrediction = async (patientId) => {
   return response.data;
 };
 
+// ============ Patients API (Combined Features + Predictions) ============
+export const getPatients = async () => {
+  const cacheKey = 'patients';
+  const cached = getCached(cacheKey);
+  if (cached) return cached;
+
+  try {
+    const response = await gatewayApi.get('/api/v1/predictions/patients');
+    const patients = response.data.patients || [];
+    setCache(cacheKey, patients);
+    return patients;
+  } catch (error) {
+    console.error('Failed to get patients:', error);
+    return [];
+  }
+};
+
 // ============ FHIR Sync (via Gateway) ============
 export const syncFhirData = async (count = 100) => {
   clearCache();
