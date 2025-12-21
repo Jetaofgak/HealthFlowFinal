@@ -1,0 +1,68 @@
+:root {
+  /* Primary Medical Palette - Clinical Blues */
+  --medical-primary: #0066cc;
+  --medical-primary-light: #3399ff;
+  --medical-primary-dark: #004c99;
+  --medical-primary-bg: rgba(0, 102, 204, 0.08);
+
+  /* Accent - Vital Signs Green */
+  --medical-accent: #00a86b;
+  --medical-accent-light: #2ecc71;
+
+  /* Risk Levels */
+  --risk-critical: #e74c3c;
+  --risk-high: #f39c12;
+  --risk-moderate: #f1c40f;
+  --risk-low: #27ae60;
+  --risk-minimal: #95a5a6;
+
+  /* Backgrounds - Clean Clinical */
+  --bg-primary: #f8f9fa;
+  --bg-secondary: #ffffff;
+  --bg-tertiary: #e9ecef;
+  --bg-dark: #1a1a2e;
+
+  /* Text */
+  --text-primary: #2c3e50;
+  --text-secondary: #7f8c8d;
+  --text-muted: #bdc3c7;
+  --text-light: #ffffff;
+
+  /* Borders */
+  --border-light: #dee2e6;
+  --border-medium: #ced4da;
+
+  /* Shadows - Subtle Depth */
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.08);
+  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.1);
+  --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.12);
+  --shadow-xl: 0 12px 48px rgba(0, 0, 0, 0.15);
+
+  /* Gradients */
+  --gradient-primary: linear-gradient(135deg, #0066cc 0%, #004c99 100%);
+  --gradient-accent: linear-gradient(135deg, #00a86b 0%, #2ecc71 100%);
+  --gradient-risk-high: linear-gradient(135deg, #e74c3c 0%, #c0392b 100%);
+  --gradient-dark: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+
+  /* Transitions */
+  --transition-fast: 150ms cubic-bezier(0.4, 0, 0.2, 1);
+  --transition-normal: 250ms cubic-bezier(0.4, 0, 0.2, 1);
+  --transition-slow: 400ms cubic-bezier(0.4, 0, 0.2, 1);
+
+  /* Spacing */
+  --sidebar-width: 280px;
+  --header-height: 70px;
+}
+
+/* Dark mode support */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg-primary: #0f0f1a;
+    --bg-secondary: #1a1a2e;
+    --bg-tertiary: #16213e;
+    --text-primary: #f8f9fa;
+    --text-secondary: #bdc3c7;
+    --border-light: #2d2d44;
+    --border-medium: #3d3d5c;
+  }
+}

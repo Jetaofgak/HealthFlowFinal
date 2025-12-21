@@ -108,7 +108,7 @@ services:
       dockerfile: Dockerfile
     container_name: healthflow-api-gateway
     ports:
-      - "8080:8080"
+      - "8085:8080"
     environment:
       PROXY_FHIR_URL: http://proxy-fhir:8081
       DEID_URL: http://deid:5000
@@ -129,11 +129,12 @@ services:
       dockerfile: Dockerfile
     container_name: healthflow-dashboard
     ports:
-      - "3000:3000"
+      - "3002:3000"
     environment:
-      VITE_API_GATEWAY_URL: http://localhost:8080
+      VITE_API_GATEWAY_URL: http://localhost:8085
     depends_on:
       - api-gateway
+
 
 volumes:
   postgres_data:
