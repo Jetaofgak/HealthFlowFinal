@@ -5,12 +5,22 @@ from models.risk_score import RiskPrediction, Base
 from models.prediction_model import CVDRiskModel
 from calculators.framingham_score import FraminghamCalculator
 from calculators.ascvd_calculator import ASCVDCalculator
+from services.xgboost_service import XGBoostPredictionService
 from config import Config
 import logging
 
 logger = logging.getLogger(__name__)
 
 prediction_bp = Blueprint('predictions', __name__)
+
+# Initialize XGBoost service (singleton)
+xgb_service = None
+
+def get_xgb_service():
+    global xgb_service
+    if xgb_service is None:
+        xgb_service = XGBoostPredictionService()
+    return xgb_service
 
 # Initialisation DB
 engine = create_engine(Config.SQLALCHEMY_DATABASE_URI)
@@ -265,13 +275,59 @@ def get_high_risk_patients():
             risk_category='high'
         ).all()
         session.close()
-        
+
         return jsonify({
             'total': len(high_risk),
             'high_risk_patients': [p.to_dict() for p in high_risk]
         }), 200
-        
+
     except Exception as e:
         logger.error(f"Error retrieving high risk patients: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@prediction_bp.route('/predictions/readmission', methods=['POST'])
+def predict_readmission():
+    """
+    Predict 30-day readmission risk for a patient
+
+    Request body:
+    {
+        "patient_id": "string",
+        "features": {
+            "age": 65,
+            "num_medications": 12,
+            "prior_admissions": 2,
+            ... other features
+        }
+    }
+    """
+    try:
+        data = request.get_json()
+
+        if not data or 'features' not in data:
+            return jsonify({'error': 'Missing features in request body'}), 400
+
+        patient_id = data.get('patient_id', 'unknown')
+        features = data['features']
+
+        # Get prediction and SHAP explanations
+        service = get_xgb_service()
+        risk_score, shap_values = service.predict_readmission_risk(features)
+        top_factors = service.get_top_risk_factors(shap_values, top_n=5)
+
+        response = {
+            'patient_id': patient_id,
+            'readmission_risk': risk_score,
+            'risk_category': 'high' if risk_score > 0.7 else 'medium' if risk_score > 0.4 else 'low',
+            'top_risk_factors': top_factors,
+            'shap_explanations': shap_values
+        }
+
+        logger.info(f"Prediction for patient {patient_id}: risk={risk_score:.3f}")
+
+        return jsonify(response), 200
+
+    except Exception as e:
+        logger.error(f"Prediction error: {str(e)}")
         return jsonify({'error': str(e)}), 500
  

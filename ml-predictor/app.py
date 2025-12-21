@@ -17,9 +17,12 @@ def create_app(config_name='development'):
     app.config.from_object(config[config_name])
     
     # CORS
-    # CORS(app)
-    
+    CORS(app, resources={r"/api/*": {"origins": "*"}})
+
     # Enregistrer les blueprints
+    from routes.health_routes import health_bp
+
+    app.register_blueprint(health_bp)
     app.register_blueprint(prediction_bp, url_prefix='/api/v1')
     
     logger.info("ML Predictor microservice started successfully")

@@ -4,13 +4,13 @@ server:
 spring:
   application:
     name: api-gateway
-  
+
   cloud:
     gateway:
       # Configuration globale CORS
       globalcors:
         corsConfigurations:
-          '[/**]':
+          "[/**]":
             allowedOrigins: "*"
             allowedMethods:
               - GET
@@ -20,41 +20,49 @@ spring:
               - OPTIONS
             allowedHeaders: "*"
             allowCredentials: false
-      
+
       # Routes vers les microservices
       routes:
         # Route vers ProxyFHIR
         - id: proxy-fhir
-          uri: http://localhost:8081
+          uri: http://proxy-fhir:8081
           predicates:
             - Path=/api/v1/fhir/**
           filters:
             - RewritePath=/api/v1/fhir/(?<segment>.*), /api/v1/fhir/${segment}
-        
+
         # Route vers DeID
         - id: deid-service
-          uri: http://localhost:5000
+          uri: http://deid:5000
           predicates:
             - Path=/api/v1/deid/**
           filters:
             - RewritePath=/api/v1/deid/(?<segment>.*), /api/v1/${segment}
-        
+
         # Route vers Featurizer
         - id: featurizer-service
-          uri: http://localhost:5001
+          uri: http://featurizer:5001
           predicates:
             - Path=/api/v1/features/**
           filters:
             - RewritePath=/api/v1/features/(?<segment>.*), /api/v1/${segment}
-        
+
         # Route vers ML Predictor
         - id: ml-predictor-service
-          uri: http://localhost:5002
+          uri: http://ml-predictor:5002
           predicates:
             - Path=/api/v1/predictions/**
           filters:
             - RewritePath=/api/v1/predictions/(?<segment>.*), /api/v1/${segment}
-        
+
+        # Route vers ScoreAPI
+        - id: score-api-service
+          uri: http://score-api:5003
+          predicates:
+            - Path=/api/v1/scores/**
+          filters:
+            - RewritePath=/api/v1/scores/(?<segment>.*), /api/v1/scores/${segment}
+
         # Route pour health check global
         - id: gateway-health
           uri: http://localhost:8080

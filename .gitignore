@@ -1,0 +1,68 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+.venv/
+venv/
+ENV/
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Synthea generated data
+scripts/synthea_output/
+synthea_output/
+output/
+*.jar
+
+# FHIR JSON files
+fhir/*.json
+scripts/fhir/*.json
+**/fhir/*.json
+
+# Datasets
+#*.csv
+!requirements.txt
+
+# Models
+*.ubj
+*.json
+!package.json
+!package-lock.json
+!tsconfig.json
+
+# Docker
+.dockerignore
+
+# Logs
+*.log
+logs/
+
+# Database
+*.db
+*.sqlite

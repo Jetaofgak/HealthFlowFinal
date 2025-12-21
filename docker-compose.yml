@@ -1,0 +1,135 @@
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:15-alpine
+    container_name: healthflow-postgres
+    environment:
+      POSTGRES_DB: healthflow_fhir
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: qwerty
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ProxyFHIR Service (Java)
+  proxy-fhir:
+    build:
+      context: ./proxy-fhir
+      dockerfile: Dockerfile
+    container_name: healthflow-proxy-fhir
+    ports:
+      - "8081:8081"
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/healthflow_fhir
+      SPRING_DATASOURCE_USERNAME: postgres
+      SPRING_DATASOURCE_PASSWORD: qwerty
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  # DeID Service (Python)
+  deid:
+    build:
+      context: ./deID
+      dockerfile: Dockerfile
+    container_name: healthflow-deid
+    ports:
+      - "5000:5000"
+    environment:
+      SQLALCHEMY_DATABASE_URI: postgresql://postgres:qwerty@postgres:5432/healthflow_fhir
+      PORT: 5000
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  # Featurizer Service (Python)
+  featurizer:
+    build:
+      context: ./featurizer
+      dockerfile: Dockerfile
+    container_name: healthflow-featurizer
+    ports:
+      - "5001:5001"
+    environment:
+      SQLALCHEMY_DATABASE_URI: postgresql://postgres:qwerty@postgres:5432/healthflow_fhir
+      PORT: 5001
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  # ML Predictor Service (Python)
+  ml-predictor:
+    build:
+      context: ./ml-predictor
+      dockerfile: Dockerfile
+    container_name: healthflow-ml-predictor
+    ports:
+      - "5002:5002"
+    environment:
+      SQLALCHEMY_DATABASE_URI: postgresql://postgres:qwerty@postgres:5432/healthflow_fhir
+      PORT: 5002
+      XGBOOST_MODEL_PATH: /app/xgboost_readmission_model.json
+    volumes:
+      - ./xgboost_readmission_model.json:/app/xgboost_readmission_model.json:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  # ScoreAPI Service (Python)
+  score-api:
+    build:
+      context: ./score-api
+      dockerfile: Dockerfile
+    container_name: healthflow-score-api
+    ports:
+      - "5003:5003"
+    environment:
+      SQLALCHEMY_DATABASE_URI: postgresql://postgres:qwerty@postgres:5432/healthflow_fhir
+      PORT: 5003
+      ML_PREDICTOR_URL: http://ml-predictor:5002
+      JWT_SECRET_KEY: production-secret-key-change-me
+    depends_on:
+      - ml-predictor
+
+  # API Gateway (Java)
+  api-gateway:
+    build:
+      context: ./api-gateway
+      dockerfile: Dockerfile
+    container_name: healthflow-api-gateway
+    ports:
+      - "8080:8080"
+    environment:
+      SPRING_CLOUD_GATEWAY_ROUTES_0_URI: http://proxy-fhir:8081
+      SPRING_CLOUD_GATEWAY_ROUTES_1_URI: http://deid:5000
+      SPRING_CLOUD_GATEWAY_ROUTES_2_URI: http://featurizer:5001
+      SPRING_CLOUD_GATEWAY_ROUTES_3_URI: http://ml-predictor:5002
+      SPRING_CLOUD_GATEWAY_ROUTES_4_URI: http://score-api:5003
+    depends_on:
+      - proxy-fhir
+      - deid
+      - featurizer
+      - ml-predictor
+      - score-api
+
+  # Dashboard Web (React)
+  dashboard:
+    build:
+      context: ./dashboard-web
+      dockerfile: Dockerfile
+    container_name: healthflow-dashboard
+    ports:
+      - "3000:3000"
+    environment:
+      VITE_API_GATEWAY_URL: http://localhost:8080
+    depends_on:
+      - api-gateway
+
+volumes:
+  postgres_data:
