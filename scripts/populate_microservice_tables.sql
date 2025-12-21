@@ -102,7 +102,7 @@ SELECT
         CASE WHEN cond_chf = 1 THEN 'Congestive Heart Failure' END,
         CASE WHEN polypharmacy = 1 THEN 'Polypharmacy' END,
         CASE WHEN age > 65 THEN 'Advanced Age' END
-    ) - 'null'::jsonb as risk_factors,
+    ) - 'null' as risk_factors,
     jsonb_build_array(
         'Regular monitoring recommended',
         'Follow medication regimen',

@@ -126,12 +126,12 @@ export default function PatientCard({ patient, onClick }) {
               Framingham Score
             </Typography>
             <Typography variant="caption" fontWeight={600} color={riskConfig.color}>
-              {framinghamScore.toFixed(0)} / 20
+              {Math.min(framinghamScore, 20).toFixed(0)} / 20
             </Typography>
           </Box>
           <LinearProgress
             variant="determinate"
-            value={(framinghamScore / 20) * 100}
+            value={Math.min((framinghamScore / 20) * 100, 100)}
             sx={{
               height: 6,
               borderRadius: 3,
@@ -150,7 +150,7 @@ export default function PatientCard({ patient, onClick }) {
             {vitalSigns.map((vital) => {
               const Icon = vital.icon;
               return (
-                <Grid item xs={6} key={vital.label}>
+                <Grid size={{ xs: 6 }} key={vital.label}>
                   <Box
                     sx={{
                       p: 1.5,
@@ -187,7 +187,7 @@ export default function PatientCard({ patient, onClick }) {
             </Typography>
             <Grid container spacing={1}>
               {labResults.map((lab) => (
-                <Grid item xs={4} key={lab.label}>
+                <Grid size={{ xs: 4 }} key={lab.label}>
                   <Box
                     sx={{
                       p: 1,
@@ -196,7 +196,7 @@ export default function PatientCard({ patient, onClick }) {
                       textAlign: 'center',
                     }}
                   >
-                    <Typography variant="caption" color="text.secondary" display="block">
+                    <Typography variant="caption" color="text.secondary" display="block" noWrap>
                       {lab.label}
                     </Typography>
                     <Typography variant="body2" fontWeight={600}>
@@ -216,7 +216,7 @@ export default function PatientCard({ patient, onClick }) {
         {physicalMetrics.length > 0 && (
           <Grid container spacing={1} sx={{ mb: 2 }}>
             {physicalMetrics.map((metric) => (
-              <Grid item xs={6} key={metric.label}>
+              <Grid size={{ xs: 6 }} key={metric.label}>
                 <Box
                   sx={{
                     p: 1,
@@ -270,7 +270,7 @@ export default function PatientCard({ patient, onClick }) {
                 }}
               >
                 <Grid container spacing={1}>
-                  <Grid item xs={6}>
+                  <Grid size={{ xs: 6 }}>
                     <Typography variant="caption" color="text.secondary">
                       Conditions Detected
                     </Typography>
@@ -278,7 +278,7 @@ export default function PatientCard({ patient, onClick }) {
                       {nlpFeatures.conditions}
                     </Typography>
                   </Grid>
-                  <Grid item xs={6}>
+                  <Grid size={{ xs: 6 }}>
                     <Typography variant="caption" color="text.secondary">
                       Medications
                     </Typography>
@@ -318,13 +318,20 @@ export default function PatientCard({ patient, onClick }) {
                     <Typography variant="caption" color="text.secondary" fontWeight={600} display="block" mb={0.5}>
                       Risk Factors
                     </Typography>
-                    {patient.risk_factors.slice(0, 3).map((factor, idx) => (
-                      <Box key={idx} sx={{ mb: 0.5 }}>
-                        <Typography variant="caption" color="error.main">
-                          • {factor.factor}: {typeof factor.value === 'number' ? factor.value.toFixed(1) : factor.value}
-                        </Typography>
-                      </Box>
-                    ))}
+                    {patient.risk_factors.filter(f => f).slice(0, 3).map((factor, idx) => {
+                      // Handle both string and object formats
+                      const isObj = typeof factor === 'object' && factor !== null;
+                      const label = isObj ? factor.factor : factor;
+                      const value = isObj ? `: ${typeof factor.value === 'number' ? factor.value.toFixed(1) : factor.value}` : '';
+                      
+                      return (
+                        <Box key={idx} sx={{ mb: 0.5 }}>
+                          <Typography variant="caption" color="error.main">
+                            • {label}{value}
+                          </Typography>
+                        </Box>
+                      );
+                    })}
                   </Box>
                 )}
 
@@ -334,13 +341,19 @@ export default function PatientCard({ patient, onClick }) {
                     <Typography variant="caption" color="text.secondary" fontWeight={600} display="block" mb={0.5}>
                       Recommendations
                     </Typography>
-                    {patient.recommendations.slice(0, 2).map((rec, idx) => (
-                      <Box key={idx} sx={{ mb: 0.5 }}>
-                        <Typography variant="caption" color="primary.main">
-                          • {rec.action}
-                        </Typography>
-                      </Box>
-                    ))}
+                    {patient.recommendations.filter(r => r).slice(0, 2).map((rec, idx) => {
+                      // Handle both string and object formats
+                      const isObj = typeof rec === 'object' && rec !== null;
+                      const text = isObj ? rec.action : rec;
+                      
+                      return (
+                        <Box key={idx} sx={{ mb: 0.5 }}>
+                          <Typography variant="caption" color="primary.main">
+                            • {text}
+                          </Typography>
+                        </Box>
+                      );
+                    })}
                   </Box>
                 )}
               </Box>

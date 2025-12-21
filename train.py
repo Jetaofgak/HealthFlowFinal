@@ -127,7 +127,7 @@ sns.heatmap(
     linewidths=0.5,
     cbar_kws={"shrink": 0.8}
 )
-plt.title('Correlation Matrix - All Features', fontsize=16, fontweight='bold')
+plt.title('Feature Correlation Heatmap - Readmission Prediction', fontsize=16, fontweight='bold')
 plt.tight_layout()
 plt.show()
 
@@ -405,7 +405,7 @@ print(f"✅ Predictions generated: {len(y_pred)} samples")
 print(f"📊 Prediction distribution:\n{pd.Series(y_pred).value_counts()}")
 
 # Calculate metrics
-from sklearn.metrics import accuracy_score, roc_auc_score, classification_report
+from sklearn.metrics import accuracy_score, roc_auc_score, classification_report, confusion_matrix
 
 accuracy = accuracy_score(y_test, y_pred)
 roc_auc = roc_auc_score(y_test, y_prob)
@@ -414,6 +414,48 @@ print(f"\n🎯 Test Accuracy: {accuracy:.4f}")
 print(f"📈 Test ROC-AUC: {roc_auc:.4f}")
 print(f"\n📋 Classification Report:")
 print(classification_report(y_test, y_pred, target_names=['No Readmission', 'Readmission']))
+
+# Generate and visualize confusion matrix
+print(f"\n🔲 === CONFUSION MATRIX ===\n")
+cm = confusion_matrix(y_test, y_pred)
+print(cm)
+
+# Visualize confusion matrix
+plt.figure(figsize=(10, 8))
+sns.heatmap(
+    cm, 
+    annot=True, 
+    fmt='d', 
+    cmap='Blues',
+    xticklabels=['No Readmission', 'Readmission'],
+    yticklabels=['No Readmission', 'Readmission'],
+    cbar_kws={'label': 'Count'}
+)
+plt.title('Confusion Matrix - Test Set', fontsize=16, fontweight='bold')
+plt.ylabel('Actual', fontsize=12)
+plt.xlabel('Predicted', fontsize=12)
+plt.tight_layout()
+plt.show()
+
+# Calculate and display confusion matrix metrics
+tn, fp, fn, tp = cm.ravel()
+print(f"\n📊 Confusion Matrix Breakdown:")
+print(f"   True Negatives (TN):  {tn:>6} - Correctly predicted No Readmission")
+print(f"   False Positives (FP): {fp:>6} - Incorrectly predicted Readmission")
+print(f"   False Negatives (FN): {fn:>6} - Missed Readmissions")
+print(f"   True Positives (TP):  {tp:>6} - Correctly predicted Readmission")
+
+# Calculate additional metrics
+sensitivity = tp / (tp + fn) if (tp + fn) > 0 else 0
+specificity = tn / (tn + fp) if (tn + fp) > 0 else 0
+precision = tp / (tp + fp) if (tp + fp) > 0 else 0
+f1_score = 2 * (precision * sensitivity) / (precision + sensitivity) if (precision + sensitivity) > 0 else 0
+
+print(f"\n📈 Additional Metrics:")
+print(f"   Sensitivity (Recall): {sensitivity:.4f} - % of actual readmissions caught")
+print(f"   Specificity:          {specificity:.4f} - % of non-readmissions correctly identified")
+print(f"   Precision:            {precision:.4f} - % of predicted readmissions that are correct")
+print(f"   F1-Score:             {f1_score:.4f} - Harmonic mean of precision and recall")
 
 
 # %%

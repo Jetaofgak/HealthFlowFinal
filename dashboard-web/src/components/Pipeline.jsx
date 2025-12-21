@@ -103,6 +103,18 @@ function Pipeline() {
     setError(null);
 
     for (let i = 0; i < steps.length; i++) {
+      // Skip Sync if checkbox is checked
+      if (i === 0 && document.getElementById('skipSync')?.checked) {
+          const skipResult = {
+              step: steps[i].label,
+              status: 'success',
+              data: { message: 'Skipped (Data Loaded Locally)' },
+              timestamp: new Date().toLocaleTimeString()
+          };
+          setResults(prev => [...prev, skipResult]);
+          continue;
+      }
+      
       const success = await executeStep(steps[i], i);
       if (!success) {
         setLoading(false);
@@ -166,6 +178,18 @@ function Pipeline() {
               sx={{ width: 200 }}
               helperText="10-100 patients recommended"
             />
+            <Box display="flex" alignItems="center" gap={1}>
+                {/* Checkbox manually implemented since I can't import properly without seeing lines */}
+                <input 
+                    type="checkbox" 
+                    id="skipSync" 
+                    defaultChecked={true} 
+                    style={{ width: 20, height: 20 }}
+                />
+                <label htmlFor="skipSync" style={{ cursor: 'pointer' }}>
+                    <Typography variant="body2">Skip Sync (Data Loaded Locally)</Typography>
+                </label>
+            </Box>
             <Button
               variant="contained"
               size="large"
