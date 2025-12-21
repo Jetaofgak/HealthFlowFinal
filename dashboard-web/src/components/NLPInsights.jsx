@@ -27,8 +27,9 @@ export default function NLPInsights() {
         setError(null);
         try {
             const data = await getFeatures();
-            // Ensure we always have an array
-            setFeatures(Array.isArray(data) ? data : []);
+            // Handle both { features: [...] } and [...] formats
+            const featuresList = data.features || data;
+            setFeatures(Array.isArray(featuresList) ? featuresList : []);
         } catch (err) {
             console.error('Error loading features:', err);
             setError('Failed to load NLP insights data. Services may be starting up.');
