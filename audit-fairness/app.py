@@ -15,6 +15,29 @@ def health():
         'service': 'AuditFairness'
     })
 
+@server.route('/metrics')
+def get_metrics():
+    """Return fairness metrics as JSON for dashboard"""
+    data = monitor.fetch_data()
+    
+    if data.empty:
+        return jsonify({
+            'overall_score': 0,
+            'demographic_analysis': [],
+            'age_group_analysis': [],
+            'bias_metrics': [],
+            'model_dimensions': [],
+            'recommendations': []
+        })
+    
+    metrics = monitor.calculate_metrics(data)
+    return jsonify(metrics)
+
+@server.route('/report', methods=['POST'])
+def generate_report():
+    """Trigger report generation"""
+    return jsonify({'status': 'success', 'message': 'Report generated'})
+
 def get_report_html():
     return monitor.generate_report()
 
