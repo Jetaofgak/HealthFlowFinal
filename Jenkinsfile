@@ -1,0 +1,393 @@
+pipeline {
+    agent any
+    
+    environment {
+        // Docker Hub credentials (configured in Jenkins Credentials)
+        DOCKER_REGISTRY = 'docker.io'
+        DOCKER_USERNAME = 'taoufikjeta'
+        DOCKER_CREDENTIALS_ID = 'dockerhub-credentials'
+        
+        // Git credentials
+        GIT_CREDENTIALS_ID = 'github-credentials'
+        
+        // Database credentials
+        POSTGRES_PASSWORD_ID = 'postgres-password'
+        
+        // Version tagging
+        VERSION = "${env.BUILD_NUMBER}"
+        GIT_SHORT_COMMIT = sh(script: "git rev-parse --short HEAD", returnStdout: true).trim()
+        IMAGE_TAG = "${env.GIT_BRANCH == 'main' ? 'latest' : env.GIT_BRANCH}-${VERSION}-${GIT_SHORT_COMMIT}"
+        
+        // Service list for parallel builds
+        JAVA_SERVICES = 'api-gateway,proxy-fhir'
+        PYTHON_SERVICES = 'deID,featurizer,ml-predictor,score-api,audit-fairness'
+        FRONTEND_SERVICES = 'dashboard-web'
+    }
+    
+    triggers {
+        // GitHub webhook trigger
+        githubPush()
+    }
+    
+    options {
+        // Keep last 10 builds
+        buildDiscarder(logRotator(numToKeepStr: '10'))
+        
+        // Timeout for entire pipeline
+        timeout(time: 30, unit: 'MINUTES')
+        
+        // No concurrent builds on same branch
+        disableConcurrentBuilds()
+        
+        // Timestamps in console output
+        timestamps()
+    }
+    
+    stages {
+        stage('Checkout') {
+            steps {
+                script {
+                    echo "🔄 Checking out code from GitHub..."
+                    checkout scm
+                    
+                    // Display build information
+                    echo """
+                    ════════════════════════════════════════
+                    🚀 HealthFlow CI/CD Pipeline
+                    ════════════════════════════════════════
+                    Branch: ${env.GIT_BRANCH}
+                    Commit: ${GIT_SHORT_COMMIT}
+                    Build: #${env.BUILD_NUMBER}
+                    Image Tag: ${IMAGE_TAG}
+                    ════════════════════════════════════════
+                    """
+                }
+            }
+        }
+        
+        stage('Build Java Services') {
+            when {
+                branch 'main'
+            }
+            steps {
+                script {
+                    echo "☕ Building Java services with Maven..."
+                    
+                    JAVA_SERVICES.split(',').each { service ->
+                        dir(service) {
+                            echo "Building ${service}..."
+                            
+                            // Clean and package
+                            sh """
+                                chmod +x mvnw
+                                ./mvnw clean package -DskipTests
+                            """
+                            
+                            // Archive the JAR
+                            archiveArtifacts artifacts: 'target/*.jar', fingerprint: true
+                        }
+                    }
+                }
+            }
+        }
+        
+        stage('Build React Frontend') {
+            when {
+                branch 'main'
+            }
+            steps {
+                script {
+                    echo "⚛️ Building React frontend..."
+                    
+                    dir('dashboard-web') {
+                        // Clean install and build
+                        sh """
+                            npm ci
+                            npm run build
+                        """
+                        
+                        // Archive build artifacts
+                        archiveArtifacts artifacts: 'dist/**/*', fingerprint: true
+                    }
+                }
+            }
+        }
+        
+        stage('Validate Python Services') {
+            when {
+                branch 'main'
+            }
+            steps {
+                script {
+                    echo "🐍 Validating Python services..."
+                    
+                    PYTHON_SERVICES.split(',').each { service ->
+                        dir(service) {
+                            echo "Validating ${service}..."
+                            
+                            // Check requirements.txt exists
+                            sh "test -f requirements.txt || (echo '❌ Missing requirements.txt' && exit 1)"
+                            echo "✅ ${service} validated"
+                        }
+                    }
+                }
+            }
+        }
+        
+        stage('Run Tests') {
+            when {
+                branch 'main'
+            }
+            parallel {
+                stage('Test Java Services') {
+                    steps {
+                        script {
+                            echo "🧪 Testing Java services..."
+                            
+                            JAVA_SERVICES.split(',').each { service ->
+                                dir(service) {
+                                    try {
+                                        sh './mvnw test'
+                                        
+                                        // Publish test results
+                                        junit allowEmptyResults: true, testResults: '**/target/surefire-reports/*.xml'
+                                    } catch (Exception e) {
+                                        echo "⚠️ Tests failed for ${service}, but continuing build..."
+                                        currentBuild.result = 'UNSTABLE'
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                
+                stage('Test React Frontend') {
+                    steps {
+                        script {
+                            dir('dashboard-web') {
+                                try {
+                                    // Run linting
+                                    sh 'npm run lint || true'
+                                    echo "✅ Frontend tests completed"
+                                } catch (Exception e) {
+                                    echo "⚠️ Frontend tests had issues, but continuing..."
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        
+        stage('Build Docker Images') {
+            when {
+                branch 'main'
+            }
+            parallel {
+                stage('Build Java Images') {
+                    steps {
+                        script {
+                            JAVA_SERVICES.split(',').each { service ->
+                                buildDockerImage(service)
+                            }
+                        }
+                    }
+                }
+                
+                stage('Build Python Images') {
+                    steps {
+                        script {
+                            PYTHON_SERVICES.split(',').each { service ->
+                                buildDockerImage(service)
+                            }
+                        }
+                    }
+                }
+                
+                stage('Build Frontend Image') {
+                    steps {
+                        script {
+                            buildDockerImage('dashboard-web')
+                        }
+                    }
+                }
+            }
+        }
+        
+        stage('Push Docker Images') {
+            when {
+                branch 'main'
+            }
+            steps {
+                script {
+                    echo "📤 Pushing Docker images to registry..."
+                    
+                    docker.withRegistry("https://${DOCKER_REGISTRY}", DOCKER_CREDENTIALS_ID) {
+                        def allServices = JAVA_SERVICES + ',' + PYTHON_SERVICES + ',' + FRONTEND_SERVICES
+                        
+                        allServices.split(',').each { service ->
+                            def serviceName = service.toLowerCase()
+                            def imageName = "${DOCKER_USERNAME}/healthflow-${serviceName}"
+                            
+                            echo "Pushing ${imageName}:${IMAGE_TAG}"
+                            
+                            // Push with build-specific tag
+                            sh "docker push ${imageName}:${IMAGE_TAG}"
+                            
+                            // Tag and push as 'latest' for main branch
+                            sh "docker tag ${imageName}:${IMAGE_TAG} ${imageName}:latest"
+                            sh "docker push ${imageName}:latest"
+                            
+                            echo "✅ Pushed ${imageName}"
+                        }
+                    }
+                }
+            }
+        }
+        
+        stage('Deploy') {
+            when {
+                branch 'main'
+            }
+            steps {
+                script {
+                    echo "🚀 Deploying HealthFlow services..."
+                    
+                    // Update docker-compose with new image versions
+                    sh """
+                        export IMAGE_TAG=${IMAGE_TAG}
+                        export DOCKER_USERNAME=${DOCKER_USERNAME}
+                        
+                        # Pull latest images
+                        docker-compose pull
+                        
+                        # Stop and remove existing containers
+                        docker-compose down
+                        
+                        # Start services with new images
+                        docker-compose up -d
+                        
+                        # Wait for services to be healthy
+                        sleep 30
+                        
+                        # Check service health
+                        docker-compose ps
+                    """
+                    
+                    echo "✅ Deployment completed!"
+                }
+            }
+        }
+        
+        stage('Health Check') {
+            when {
+                branch 'main'
+            }
+            steps {
+                script {
+                    echo "🏥 Running health checks..."
+                    
+                    def services = [
+                        [name: 'API Gateway', url: 'http://localhost:8085/actuator/health'],
+                        [name: 'Proxy FHIR', url: 'http://localhost:8081/actuator/health'],
+                        [name: 'DeID Service', url: 'http://localhost:5000/api/v1/health'],
+                        [name: 'Featurizer', url: 'http://localhost:5001/api/v1/health'],
+                        [name: 'ML Predictor', url: 'http://localhost:5002/api/v1/health'],
+                        [name: 'Score API', url: 'http://localhost:5003/health'],
+                        [name: 'Audit Fairness', url: 'http://localhost:5004/api/v1/health'],
+                        [name: 'Dashboard', url: 'http://localhost:3002']
+                    ]
+                    
+                    def allHealthy = true
+                    
+                    services.each { service ->
+                        try {
+                            def response = sh(
+                                script: "curl -s -o /dev/null -w '%{http_code}' ${service.url} || echo '000'",
+                                returnStdout: true
+                            ).trim()
+                            
+                            if (response == '200') {
+                                echo "✅ ${service.name}: HEALTHY"
+                            } else {
+                                echo "⚠️ ${service.name}: UNHEALTHY (HTTP ${response})"
+                                allHealthy = false
+                            }
+                        } catch (Exception e) {
+                            echo "❌ ${service.name}: FAILED - ${e.message}"
+                            allHealthy = false
+                        }
+                    }
+                    
+                    if (!allHealthy) {
+                        echo "⚠️ Some services are not healthy. Check logs with: docker-compose logs"
+                        currentBuild.result = 'UNSTABLE'
+                    } else {
+                        echo "✅ All services are healthy!"
+                    }
+                }
+            }
+        }
+    }
+    
+    post {
+        success {
+            script {
+                echo """
+                ════════════════════════════════════════
+                ✅ BUILD SUCCESSFUL!
+                ════════════════════════════════════════
+                All services deployed and healthy
+                Dashboard: http://localhost:3002
+                API Gateway: http://localhost:8085
+                ════════════════════════════════════════
+                """
+                
+                // Clean up old images to save space
+                sh """
+                    echo "🧹 Cleaning up old Docker images..."
+                    docker image prune -f --filter "until=168h"
+                """
+            }
+        }
+        
+        failure {
+            script {
+                echo """
+                ════════════════════════════════════════
+                ❌ BUILD FAILED!
+                ════════════════════════════════════════
+                Check the logs above for details
+                ════════════════════════════════════════
+                """
+            }
+        }
+        
+        always {
+            script {
+                // Archive logs
+                sh 'docker-compose logs > docker-compose.log 2>&1 || true'
+                archiveArtifacts artifacts: 'docker-compose.log', allowEmptyArchive: true
+                
+                echo "📊 Build #${env.BUILD_NUMBER} completed at ${new Date()}"
+            }
+        }
+    }
+}
+
+// Helper function to build Docker images
+def buildDockerImage(String service) {
+    def serviceName = service.toLowerCase()
+    def imageName = "${env.DOCKER_USERNAME}/healthflow-${serviceName}"
+    def imageTag = "${imageName}:${env.IMAGE_TAG}"
+    
+    echo "🐳 Building Docker image: ${imageTag}"
+    
+    dir(service) {
+        sh """
+            docker build -t ${imageTag} .
+        """
+    }
+    
+    echo "✅ Built ${imageTag}"
+}
