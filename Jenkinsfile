@@ -432,4 +432,3 @@ def buildDockerImage(String service) {
     
     echo "✅ Built ${imageTag}"
 }
-
