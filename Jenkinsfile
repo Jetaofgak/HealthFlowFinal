@@ -2,6 +2,9 @@ pipeline {
     agent any
     
     environment {
+        // Skip Git LFS downloads (avoid large database backup file)
+        GIT_LFS_SKIP_SMUDGE = '1'
+        
         // Docker Hub credentials (configured in Jenkins Credentials)
         DOCKER_REGISTRY = 'docker.io'
         DOCKER_USERNAME = 'taoufikjeta'
@@ -18,8 +21,7 @@ pipeline {
         
         // Version tagging
         VERSION = "${env.BUILD_NUMBER}"
-        GIT_SHORT_COMMIT = sh(script: "git rev-parse --short HEAD", returnStdout: true).trim()
-        IMAGE_TAG = "${env.GIT_BRANCH == 'main' ? 'latest' : env.GIT_BRANCH}-${VERSION}-${GIT_SHORT_COMMIT}"
+        // Note: GIT_SHORT_COMMIT will be set dynamically in Checkout stage
         
         // Service list for parallel builds
         JAVA_SERVICES = 'api-gateway,proxy-fhir'
@@ -53,16 +55,20 @@ pipeline {
                     echo "🔄 Checking out code from GitHub..."
                     checkout scm
                     
+                    // Get Git commit hash (Windows compatible)
+                    env.GIT_SHORT_COMMIT = powershell(script: "git rev-parse --short HEAD", returnStdout: true).trim()
+                    env.IMAGE_TAG = "${env.GIT_BRANCH == 'main' ? 'latest' : env.GIT_BRANCH}-${env.VERSION}-${env.GIT_SHORT_COMMIT}"
+                    
                     // Display build information
                     echo """
                     ════════════════════════════════════════
                     🚀 HealthFlow CI/CD Pipeline
                     ════════════════════════════════════════
                     Branch: ${env.GIT_BRANCH}
-                    Commit: ${GIT_SHORT_COMMIT}
+                    Commit: ${env.GIT_SHORT_COMMIT}
                     Build: #${env.BUILD_NUMBER}
-                    Image Tag: ${IMAGE_TAG}
-                    Compose File: ${COMPOSE_FILE}
+                    Image Tag: ${env.IMAGE_TAG}
+                    Compose File: ${env.COMPOSE_FILE}
                     ════════════════════════════════════════
                     """
                 }
@@ -81,10 +87,9 @@ pipeline {
                         dir(service) {
                             echo "Building ${service}..."
                             
-                            // Clean and package
-                            sh """
-                                chmod +x mvnw
-                                ./mvnw clean package -DskipTests
+                            // Clean and package (Windows compatible)
+                            bat """
+                                mvnw.cmd clean package -DskipTests
                             """
                             
                             // Archive the JAR
@@ -104,8 +109,8 @@ pipeline {
                     echo "⚛️ Building React frontend..."
                     
                     dir('dashboard-web') {
-                        // Clean install and build
-                        sh """
+                        // Clean install and build (Windows compatible)
+                        bat """
                             npm ci
                             npm run build
                         """
@@ -129,8 +134,13 @@ pipeline {
                         dir(service) {
                             echo "Validating ${service}..."
                             
-                            // Check requirements.txt exists
-                            sh "test -f requirements.txt || (echo '❌ Missing requirements.txt' && exit 1)"
+                            // Check requirements.txt exists (Windows compatible)
+                            bat """
+                                if not exist requirements.txt (
+                                    echo ❌ Missing requirements.txt
+                                    exit /b 1
+                                )
+                            """
                             echo "✅ ${service} validated"
                         }
                     }
@@ -151,7 +161,7 @@ pipeline {
                             JAVA_SERVICES.split(',').each { service ->
                                 dir(service) {
                                     try {
-                                        sh './mvnw test'
+                                        bat 'mvnw.cmd test'
                                         
                                         // Publish test results
                                         junit allowEmptyResults: true, testResults: '**/target/surefire-reports/*.xml'
@@ -170,8 +180,8 @@ pipeline {
                         script {
                             dir('dashboard-web') {
                                 try {
-                                    // Run linting
-                                    sh 'npm run lint || true'
+                                    // Run linting (Windows compatible)
+                                    bat 'npm run lint || exit 0'
                                     echo "✅ Frontend tests completed"
                                 } catch (Exception e) {
                                     echo "⚠️ Frontend tests had issues, but continuing..."
@@ -233,14 +243,14 @@ pipeline {
                             def serviceName = service.toLowerCase()
                             def imageName = "${DOCKER_USERNAME}/healthflow-${serviceName}"
                             
-                            echo "Pushing ${imageName}:${IMAGE_TAG}"
+                            echo "Pushing ${imageName}:${env.IMAGE_TAG}"
                             
-                            // Push with build-specific tag
-                            sh "docker push ${imageName}:${IMAGE_TAG}"
+                            // Push with build-specific tag (Windows compatible)
+                            bat "docker push ${imageName}:${env.IMAGE_TAG}"
                             
                             // Tag and push as 'latest' for main branch
-                            sh "docker tag ${imageName}:${IMAGE_TAG} ${imageName}:latest"
-                            sh "docker push ${imageName}:latest"
+                            bat "docker tag ${imageName}:${env.IMAGE_TAG} ${imageName}:latest"
+                            bat "docker push ${imageName}:latest"
                             
                             echo "✅ Pushed ${imageName}"
                         }
@@ -257,24 +267,24 @@ pipeline {
                 script {
                     echo "🚀 Deploying HealthFlow services..."
                     
-                    // Update docker-compose with new image versions
-                    sh """
-                        export IMAGE_TAG=${IMAGE_TAG}
-                        export DOCKER_USERNAME=${DOCKER_USERNAME}
+                    // Update docker-compose with new image versions (Windows compatible)
+                    bat """
+                        set IMAGE_TAG=${env.IMAGE_TAG}
+                        set DOCKER_USERNAME=${DOCKER_USERNAME}
                         
-                        # Pull latest images
+                        @REM Pull latest images
                         docker-compose -f ${COMPOSE_FILE} pull
                         
-                        # Stop and remove existing containers
+                        @REM Stop and remove existing containers
                         docker-compose -f ${COMPOSE_FILE} down
                         
-                        # Start services with new images
+                        @REM Start services with new images
                         docker-compose -f ${COMPOSE_FILE} up -d
                         
-                        # Wait for services to be healthy
-                        sleep 30
+                        @REM Wait for services to be healthy
+                        timeout /t 30 /nobreak
                         
-                        # Check service health
+                        @REM Check service health
                         docker-compose -f ${COMPOSE_FILE} ps
                     """
                     
@@ -306,8 +316,16 @@ pipeline {
                     
                     services.each { service ->
                         try {
-                            def response = sh(
-                                script: "curl -s -o /dev/null -w '%{http_code}' ${service.url} || echo '000'",
+                            // Use PowerShell for health checks (Windows compatible)
+                            def response = powershell(
+                                script: """
+                                    try {
+                                        \$result = Invoke-WebRequest -Uri '${service.url}' -UseBasicParsing -TimeoutSec 5
+                                        \$result.StatusCode
+                                    } catch {
+                                        '000'
+                                    }
+                                """,
                                 returnStdout: true
                             ).trim()
                             
@@ -347,9 +365,9 @@ pipeline {
                 ════════════════════════════════════════
                 """
                 
-                // Clean up old images to save space
-                sh """
-                    echo "🧹 Cleaning up old Docker images..."
+                // Clean up old images to save space (Windows compatible)
+                bat """
+                    echo 🧹 Cleaning up old Docker images...
                     docker image prune -f --filter "until=168h"
                 """
             }
@@ -369,8 +387,8 @@ pipeline {
         
         always {
             script {
-                // Archive logs
-                sh "docker-compose -f ${COMPOSE_FILE} logs > docker-compose.log 2>&1 || true"
+                // Archive logs (Windows compatible)
+                bat "docker-compose -f ${COMPOSE_FILE} logs > docker-compose.log 2>&1 || exit 0"
                 archiveArtifacts artifacts: 'docker-compose.log', allowEmptyArchive: true
                 
                 echo "📊 Build #${env.BUILD_NUMBER} completed at ${new Date()}"
@@ -388,7 +406,7 @@ def buildDockerImage(String service) {
     echo "🐳 Building Docker image: ${imageTag}"
     
     dir(service) {
-        sh """
+        bat """
             docker build -t ${imageTag} .
         """
     }
