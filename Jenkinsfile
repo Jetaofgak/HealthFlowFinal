@@ -77,7 +77,9 @@ pipeline {
         
         stage('Build Java Services') {
             when {
-                branch 'main'
+                expression { 
+                    env.GIT_BRANCH ==~ /.*main/ 
+                }
             }
             steps {
                 script {
@@ -102,7 +104,9 @@ pipeline {
         
         stage('Build React Frontend') {
             when {
-                branch 'main'
+                expression { 
+                    env.GIT_BRANCH ==~ /.*main/ 
+                }
             }
             steps {
                 script {
@@ -124,7 +128,9 @@ pipeline {
         
         stage('Validate Python Services') {
             when {
-                branch 'main'
+                expression { 
+                    env.GIT_BRANCH ==~ /.*main/ 
+                }
             }
             steps {
                 script {
@@ -150,7 +156,9 @@ pipeline {
         
         stage('Run Tests') {
             when {
-                branch 'main'
+                expression { 
+                    env.GIT_BRANCH ==~ /.*main/ 
+                }
             }
             parallel {
                 stage('Test Java Services') {
@@ -195,7 +203,9 @@ pipeline {
         
         stage('Build Docker Images') {
             when {
-                branch 'main'
+                expression { 
+                    env.GIT_BRANCH ==~ /.*main/ 
+                }
             }
             parallel {
                 stage('Build Java Images') {
@@ -230,7 +240,9 @@ pipeline {
         
         stage('Push Docker Images') {
             when {
-                branch 'main'
+                expression { 
+                    env.GIT_BRANCH ==~ /.*main/ 
+                }
             }
             steps {
                 script {
@@ -261,7 +273,9 @@ pipeline {
         
         stage('Deploy') {
             when {
-                branch 'main'
+                expression { 
+                    env.GIT_BRANCH ==~ /.*main/ 
+                }
             }
             steps {
                 script {
@@ -295,7 +309,9 @@ pipeline {
         
         stage('Health Check') {
             when {
-                branch 'main'
+                expression { 
+                    env.GIT_BRANCH ==~ /.*main/ 
+                }
             }
             steps {
                 script {
