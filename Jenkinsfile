@@ -8,7 +8,7 @@ pipeline {
         // Docker Hub credentials (configured in Jenkins Credentials)
         DOCKER_REGISTRY = 'docker.io'
         DOCKER_USERNAME = 'taoufikjeta'
-        DOCKER_CREDENTIALS_ID = 'dockers-pat'
+        DOCKER_CREDENTIALS_ID = 'jenkins-ci'
         
         // Git credentials
         GIT_CREDENTIALS_ID = 'github-credentials'
@@ -432,3 +432,4 @@ def buildDockerImage(String service) {
     
     echo "✅ Built ${imageTag}"
 }
+
