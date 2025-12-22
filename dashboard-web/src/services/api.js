@@ -1,40 +1,6 @@
-import axios from 'axios';
+import { gatewayApi, getCached, setCache, clearCache } from './apiCore';
 
-// All requests go through API Gateway
-const GATEWAY_URL = 'http://localhost:8085';
-
-const createApi = (baseURL) => {
-  const instance = axios.create({
-    baseURL,
-    headers: { 'Content-Type': 'application/json' },
-    timeout: 30000,
-  });
-  return instance;
-};
-
-// Gateway API instance
-const gatewayApi = createApi(GATEWAY_URL);
-
-// Simple cache implementation
-const cache = new Map();
-const CACHE_TTL = 60000; // 1 minute
-
-const getCached = (key) => {
-  const cached = cache.get(key);
-  if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
-    return cached.data;
-  }
-  cache.delete(key);
-  return null;
-};
-
-const setCache = (key, data) => {
-  cache.set(key, { data, timestamp: Date.now() });
-};
-
-export const clearCache = () => {
-  cache.clear();
-};
+export { clearCache };
 
 // Health checks for all services (direct checks for admin purposes)
 // Health checks for all services (routed via Gateway)
