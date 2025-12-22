@@ -59,9 +59,10 @@ def extract_all_features():
     """Extrait les features de tous les patients existants"""
     try:
         session = Session()
-        # Retrieve all patient IDs from the reliable source (patient_features)
+        # Retrieve all patient IDs from the source (anonymized data)
         from sqlalchemy import text
-        query = text("SELECT patient_id FROM patient_features")
+        # Fix: Select from fhir_resources_anonymized to get ALL patients using anonymized ID
+        query = text("SELECT anonymized_fhir_id FROM fhir_resources_anonymized WHERE resource_type = 'Patient'")
         patients = session.execute(query).fetchall()
         session.close()
         

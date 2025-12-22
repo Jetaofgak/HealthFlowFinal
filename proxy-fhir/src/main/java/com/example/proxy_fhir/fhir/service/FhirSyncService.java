@@ -64,6 +64,7 @@ public class FhirSyncService {
 
         return resourceCount;
     }
+
     /**
      * Synchronise plusieurs patients
      */
@@ -82,8 +83,7 @@ public class FhirSyncService {
             // Synchroniser chaque patient
             for (Bundle.BundleEntryComponent entry : patientBundle.getEntry()) {
                 if (entry.getResource() instanceof org.hl7.fhir.r4.model.Patient) {
-                    org.hl7.fhir.r4.model.Patient patient =
-                            (org.hl7.fhir.r4.model.Patient) entry.getResource();
+                    org.hl7.fhir.r4.model.Patient patient = (org.hl7.fhir.r4.model.Patient) entry.getResource();
                     String patientId = patient.getIdElement().getIdPart();
 
                     try {
@@ -108,8 +108,7 @@ public class FhirSyncService {
                     "failed", failedPatients.size(),
                     "totalResources", totalResources,
                     "syncedPatientIds", syncedPatients,
-                    "failedPatientIds", failedPatients
-            );
+                    "failedPatientIds", failedPatients);
 
         } catch (Exception e) {
             log.error("Error in bulk sync: {}", e.getMessage(), e);
@@ -153,7 +152,7 @@ public class FhirSyncService {
                         .versionId(resource.getMeta().getVersionId())
                         .lastUpdated(resource.getMeta().getLastUpdated() != null
                                 ? resource.getMeta().getLastUpdated().toInstant()
-                                .atZone(ZoneId.systemDefault()).toLocalDateTime()
+                                        .atZone(ZoneId.systemDefault()).toLocalDateTime()
                                 : LocalDateTime.now())
                         .build();
 
@@ -201,7 +200,8 @@ public class FhirSyncService {
                     .build();
 
             bundleRepository.save(fhirBundle);
-            log.info("Saved FHIR Bundle: type={}, patientId={}, resources={}", bundleType, patientId, bundle.getEntry().size());
+            log.info("Saved FHIR Bundle: type={}, patientId={}, resources={}", bundleType, patientId,
+                    bundle.getEntry().size());
 
         } catch (Exception e) {
             log.error("Error saving FHIR bundle: {}", e.getMessage(), e);
@@ -223,4 +223,121 @@ public class FhirSyncService {
         return statistics;
     }
 
+    /**
+     * Compte le nombre de patients synchronisés
+     */
+    public long getPatientCount() {
+        return bundleRepository.count();
+    }
+
+    /**
+     * Génère des données synthétiques via Synthea
+     */
+    @Transactional
+    public Map<String, Object> generatePatients(int count) {
+        log.info("Starting Synthea generation for {} patients...", count);
+        long startTime = System.currentTimeMillis();
+
+        try {
+            // Check if scripts directory exists
+            java.nio.file.Path scriptDir = java.nio.file.Paths.get("/app/scripts");
+            if (!java.nio.file.Files.exists(scriptDir)) {
+                throw new RuntimeException("Scripts directory /app/scripts not found. Is the volume mounted?");
+            }
+
+            // Synthea JAR path
+            String jarPath = "/app/scripts/synthea-with-dependencies.jar";
+            if (!java.nio.file.Files.exists(java.nio.file.Paths.get(jarPath))) {
+                // Try to find it in the current directory if not in scripts (fallback)
+                if (java.nio.file.Files.exists(java.nio.file.Paths.get("synthea-with-dependencies.jar"))) {
+                    jarPath = "synthea-with-dependencies.jar";
+                } else {
+                    throw new RuntimeException("Synthea JAR not found at " + jarPath);
+                }
+            }
+
+            // Output directory (Unique per request to avoid collisions)
+            String transactionId = java.util.UUID.randomUUID().toString();
+            String outputDir = "/app/synthea_output_" + transactionId;
+            java.nio.file.Path outputDirPath = java.nio.file.Paths.get(outputDir);
+            java.nio.file.Files.createDirectories(outputDirPath);
+
+            try {
+                // Run Synthea
+                List<String> command = new ArrayList<>();
+                command.add("java");
+                command.add("-jar");
+                command.add(jarPath);
+                command.add("-p");
+                command.add(String.valueOf(count));
+                command.add("--exporter.fhir.export=true");
+                command.add("--exporter.baseDirectory=" + outputDir);
+                command.add("Massachusetts");
+
+                ProcessBuilder pb = new ProcessBuilder(command);
+                pb.redirectErrorStream(true);
+                Process process = pb.start();
+
+                // Read output
+                try (java.io.BufferedReader reader = new java.io.BufferedReader(
+                        new java.io.InputStreamReader(process.getInputStream()))) {
+                    String line;
+                    while ((line = reader.readLine()) != null) {
+                        log.debug("Synthea: {}", line);
+                    }
+                }
+
+                int exitCode = process.waitFor();
+                if (exitCode != 0) {
+                    throw new RuntimeException("Synthea failed with exit code " + exitCode);
+                }
+
+                // Import generated files
+                try (java.util.stream.Stream<java.nio.file.Path> stream = java.nio.file.Files
+                        .walk(outputDirPath)) {
+                    stream.filter(p -> p.toString().endsWith(".json") && !p.toString().contains("hospital"))
+                            .forEach(path -> {
+                                try {
+                                    String content = java.nio.file.Files.readString(path);
+                                    IParser parser = fhirContext.newJsonParser();
+                                    Bundle bundle = parser.parseResource(Bundle.class, content);
+
+                                    // Extract Patient ID
+                                    String patientId = "unknown";
+                                    if (!bundle.getEntry().isEmpty()
+                                            && bundle.getEntry().get(0)
+                                                    .getResource() instanceof org.hl7.fhir.r4.model.Patient) {
+                                        patientId = bundle.getEntry().get(0).getResource().getIdElement().getIdPart();
+                                    }
+
+                                    saveFhirBundle(bundle, "synthea-generated", "patientId=" + patientId);
+                                } catch (Exception e) {
+                                    log.error("Failed to process file {}: {}", path, e.getMessage());
+                                }
+                            });
+                }
+
+            } finally {
+                // Cleanup unique directory
+                try {
+                    if (java.nio.file.Files.exists(outputDirPath)) {
+                        try (java.util.stream.Stream<java.nio.file.Path> walk = java.nio.file.Files
+                                .walk(outputDirPath)) {
+                            walk.sorted(java.util.Comparator.reverseOrder())
+                                    .map(java.nio.file.Path::toFile)
+                                    .forEach(java.io.File::delete);
+                        }
+                    }
+                } catch (Exception e) {
+                    log.warn("Failed to cleanup temp directory {}: {}", outputDir, e.getMessage());
+                }
+            }
+
+            return Map.of("status", "success", "count", count);
+
+        } catch (Exception e) {
+            log.error("Generation failed: {}", e.getMessage(), e);
+            throw new RuntimeException("Generation failed: " + e.getMessage(), e);
+        }
+    }
 }

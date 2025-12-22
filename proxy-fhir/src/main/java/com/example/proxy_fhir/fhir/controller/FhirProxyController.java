@@ -18,6 +18,7 @@ public class FhirProxyController {
 
     private final FhirClientService fhirClientService;
     private final FhirSyncService fhirSyncService;
+
     /**
      * Synchronise plusieurs patients en masse
      */
@@ -72,8 +73,7 @@ public class FhirProxyController {
         return ResponseEntity.ok(Map.of(
                 "status", "success",
                 "patientId", patientId,
-                "resourcesSynced", resourceCount
-        ));
+                "resourcesSynced", resourceCount));
     }
 
     /**
@@ -92,7 +92,23 @@ public class FhirProxyController {
     public ResponseEntity<Map<String, String>> health() {
         return ResponseEntity.ok(Map.of(
                 "status", "UP",
-                "service", "ProxyFHIR"
-        ));
+                "service", "ProxyFHIR"));
+    }
+
+    /**
+     * Compte le nombre de patients
+     */
+    @GetMapping("/count")
+    public ResponseEntity<Map<String, Long>> getCount() {
+        log.info("GET /fhir/count");
+        long count = fhirSyncService.getPatientCount();
+        return ResponseEntity.ok(Map.of("count", count));
+    }
+
+    @PostMapping("/generate")
+    public ResponseEntity<Map<String, Object>> generatePatients(@RequestParam(defaultValue = "1") int count) {
+        log.info("POST /fhir/generate count={}", count);
+        Map<String, Object> result = fhirSyncService.generatePatients(count);
+        return ResponseEntity.ok(result);
     }
 }

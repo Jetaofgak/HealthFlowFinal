@@ -171,12 +171,30 @@ export const getPatients = async () => {
 };
 
 // ============ FHIR Sync (via Gateway) ============
+export const getLocalPatientCount = async () => {
+    try {
+        const response = await gatewayApi.get('/api/v1/fhir/count');
+        return response.data;
+    } catch (error) {
+        console.error('Failed to get patient count:', error);
+        return { count: 0 };
+    }
+};
+
 export const syncFhirData = async (count = 100) => {
   clearCache();
   const response = await gatewayApi.post(`/api/v1/fhir/sync/bulk?count=${count}`, {}, {
     timeout: 600000, // 10 minutes for bulk sync
   });
   return response.data;
+};
+
+export const generatePatients = async (count = 10) => {
+    clearCache();
+    const response = await gatewayApi.post(`/api/v1/fhir/generate?count=${count}`, {}, {
+        timeout: 600000 // 10 minutes
+    });
+    return response.data;
 };
 
 // ============ Anonymization (via Gateway) ============

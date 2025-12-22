@@ -30,6 +30,8 @@ services:
     dns:
       - 8.8.8.8
       - 8.8.4.4
+    volumes:
+      - ./scripts:/app/scripts
     depends_on:
       postgres:
         condition: service_healthy
