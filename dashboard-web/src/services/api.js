@@ -1,28 +1,61 @@
 import axios from 'axios';
 
-const API_BASE_URL = 'http://localhost:8080/api/v1';
+// All requests go through API Gateway
+const GATEWAY_URL = 'http://localhost:8085';
 
-const api = axios.create({
-  baseURL: API_BASE_URL,
-  headers: {
-    'Content-Type': 'application/json',
-  },
-});
+const createApi = (baseURL) => {
+  const instance = axios.create({
+    baseURL,
+    headers: { 'Content-Type': 'application/json' },
+    timeout: 30000,
+  });
+  return instance;
+};
 
-// Health checks for all services
+// Gateway API instance
+const gatewayApi = createApi(GATEWAY_URL);
+
+// Simple cache implementation
+const cache = new Map();
+const CACHE_TTL = 60000; // 1 minute
+
+const getCached = (key) => {
+  const cached = cache.get(key);
+  if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
+    return cached.data;
+  }
+  cache.delete(key);
+  return null;
+};
+
+const setCache = (key, data) => {
+  cache.set(key, { data, timestamp: Date.now() });
+};
+
+export const clearCache = () => {
+  cache.clear();
+};
+
+// Health checks for all services (direct checks for admin purposes)
+// Health checks for all services (routed via Gateway)
 export const checkAllServicesHealth = async () => {
   const services = [
-    { name: 'DeID', port: 5000, path: '/health' },
-    { name: 'Featurizer', port: 5001, path: '/health' },
-    { name: 'ML-Predictor', port: 5002, path: '/health' },
-    { name: 'ScoreAPI', port: 5003, path: '/health' },
-    { name: 'API Gateway', port: 8080, path: '/health' },
+    { name: 'ProxyFHIR', path: '/api/v1/fhir/health', port: 8081 },
+    { name: 'DeID', path: '/api/v1/deid/health', port: 5000 },
+    { name: 'Featurizer', path: '/api/v1/features/health', port: 5001 },
+    { name: 'ML-Predictor', path: '/api/v1/predictions/health', port: 5002 },
+    { name: 'ScoreAPI', path: '/api/v1/scores/health', port: 5003 },
+    { name: 'AuditFairness', path: '/api/v1/audit/health', port: 5004 },
+    { name: 'API Gateway', path: '/health', port: 8085 },
   ];
 
   const healthChecks = await Promise.allSettled(
     services.map(async (service) => {
       try {
-        const response = await axios.get(`http://localhost:${service.port}${service.path}`);
+        // Use gatewayApi to benefit from valid baseURL and config
+        const response = await gatewayApi.get(service.path, {
+            timeout: 5000 
+        });
         return {
           name: service.name,
           status: 'healthy',
@@ -32,65 +65,180 @@ export const checkAllServicesHealth = async () => {
         return {
           name: service.name,
           status: 'unhealthy',
-          error: error.message,
+          error: error.code === 'ECONNREFUSED'
+            ? 'Service not reachable via Gateway'
+            : (error.response?.statusText || error.message),
         };
       }
     })
   );
 
-  return healthChecks.map((result, index) => ({
-    ...services[index],
-    ...(result.status === 'fulfilled' ? result.value : { status: 'error', error: result.reason }),
-  }));
+  return healthChecks.map((result, index) => {
+    const serviceInfo = services[index];
+    if (result.status === 'fulfilled') {
+      return { ...serviceInfo, ...result.value };
+    } else {
+      return {
+        ...serviceInfo,
+        status: 'error',
+        error: result.reason?.message || 'Unknown error'
+      };
+    }
+  });
 };
 
-
-// Features API
+// ============ Features API (via Gateway) ============
 export const getFeatures = async () => {
-  const response = await api.get('/features/features');
-  return response.data;
+  const cacheKey = 'features';
+  const cached = getCached(cacheKey);
+  if (cached) return cached;
+
+  try {
+    const response = await gatewayApi.get('/api/v1/features/features');
+    setCache(cacheKey, response.data);
+    return response.data;
+  } catch (error) {
+    console.error('Failed to get features:', error);
+    return [];
+  }
 };
 
 export const getFeatureStats = async () => {
-  const response = await api.get('/features/stats');
-  return response.data;
+  const cacheKey = 'featureStats';
+  const cached = getCached(cacheKey);
+  if (cached) return cached;
+
+  try {
+    const response = await gatewayApi.get('/api/v1/features/stats');
+    setCache(cacheKey, response.data);
+    return response.data;
+  } catch (error) {
+    console.error('Failed to get feature stats:', error);
+    return { total_patients: 0 };
+  }
 };
 
 export const extractFeatures = async () => {
-  const response = await api.post('/features/extract/all');
+  clearCache();
+  const response = await gatewayApi.post('/api/v1/features/extract/all');
   return response.data;
 };
 
-// Predictions API
+// ============ Predictions API (via Gateway) ============
 export const getPredictions = async () => {
-  const response = await api.get('/predictions/predictions');
-  return response.data;
+  const cacheKey = 'predictions';
+  const cached = getCached(cacheKey);
+  if (cached) return cached;
+
+  try {
+    const response = await gatewayApi.get('/api/v1/predictions/predictions');
+    setCache(cacheKey, response.data);
+    return response.data;
+  } catch (error) {
+    console.error('Failed to get predictions:', error);
+    return [];
+  }
 };
 
 export const getPredictionStats = async () => {
-  const response = await api.get('/predictions/stats');
-  return response.data;
+  const cacheKey = 'predictionStats';
+  const cached = getCached(cacheKey);
+  if (cached) return cached;
+
+  try {
+    const response = await gatewayApi.get('/api/v1/predictions/stats');
+    setCache(cacheKey, response.data);
+    return response.data;
+  } catch (error) {
+    console.error('Failed to get prediction stats:', error);
+    return { total_predictions: 0, risk_distribution: {} };
+  }
 };
 
 export const getHighRiskPatients = async () => {
-  const response = await api.get('/predictions/high-risk');
-  return response.data;
+  const cacheKey = 'highRiskPatients';
+  const cached = getCached(cacheKey);
+  if (cached) return cached;
+
+  try {
+    const response = await gatewayApi.get('/api/v1/predictions/high-risk');
+    setCache(cacheKey, response.data);
+    return response.data;
+  } catch (error) {
+    console.error('Failed to get high risk patients:', error);
+    return [];
+  }
 };
 
 export const predictRisks = async () => {
-  const response = await api.post('/predictions/predict/all');
+  clearCache();
+  const response = await gatewayApi.post('/api/v1/predictions/predict/all');
   return response.data;
 };
 
-// Get patient details
+// ============ Patient Details ============
 export const getPatientFeatures = async (patientId) => {
-  const response = await api.get(`/features/features/${patientId}`);
+  const response = await gatewayApi.get(`/api/v1/features/features/${patientId}`);
   return response.data;
 };
 
 export const getPatientPrediction = async (patientId) => {
-  const response = await api.get(`/predictions/risk/${patientId}`);
+  const response = await gatewayApi.get(`/api/v1/predictions/risk/${patientId}`);
   return response.data;
 };
 
-export default api;
+// ============ Patients API (Combined Features + Predictions) ============
+export const getPatients = async () => {
+  const cacheKey = 'patients';
+  const cached = getCached(cacheKey);
+  if (cached) return cached;
+
+  try {
+    const response = await gatewayApi.get('/api/v1/predictions/patients');
+    const patients = response.data.patients || [];
+    setCache(cacheKey, patients);
+    return patients;
+  } catch (error) {
+    console.error('Failed to get patients:', error);
+    return [];
+  }
+};
+
+// ============ FHIR Sync (via Gateway) ============
+export const syncFhirData = async (count = 100) => {
+  clearCache();
+  const response = await gatewayApi.post(`/api/v1/fhir/sync/bulk?count=${count}`, {}, {
+    timeout: 600000, // 10 minutes for bulk sync
+  });
+  return response.data;
+};
+
+// ============ Anonymization (via Gateway) ============
+export const anonymizeData = async () => {
+  clearCache();
+  const response = await gatewayApi.post('/api/v1/deid/anonymize/all');
+  return response.data;
+};
+
+// ============ Audit Fairness API (via Gateway) ============
+export const getAuditMetrics = async () => {
+  const cacheKey = 'auditMetrics';
+  const cached = getCached(cacheKey);
+  if (cached) return cached;
+
+  try {
+    const response = await gatewayApi.get('/api/v1/audit/metrics');
+    setCache(cacheKey, response.data);
+    return response.data;
+  } catch (error) {
+    console.error('Failed to get audit metrics:', error);
+    throw error; // Let component handle fallback
+  }
+};
+
+export const generateFairnessReport = async () => {
+  const response = await gatewayApi.post('/api/v1/audit/report');
+  return response.data;
+};
+
+export default gatewayApi;

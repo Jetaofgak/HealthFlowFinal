@@ -27,6 +27,9 @@ services:
       - "8081:8081"
     environment:
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/healthflow_fhir
+    dns:
+      - 8.8.8.8
+      - 8.8.4.4
     depends_on:
       postgres:
         condition: service_healthy
@@ -101,6 +104,21 @@ services:
     depends_on:
       - ml-predictor
 
+  # AuditFairness Service
+  audit-fairness:
+    build:
+      context: ./audit-fairness
+      dockerfile: Dockerfile
+    container_name: healthflow-audit-fairness
+    ports:
+      - "5004:5004"
+    environment:
+      SQLALCHEMY_DATABASE_URI: postgresql://postgres:qwerty@postgres:5432/healthflow_fhir
+      PORT: 5004
+    depends_on:
+      postgres:
+        condition: service_healthy
+
   # API Gateway (Java)
   api-gateway:
     build:
@@ -108,13 +126,14 @@ services:
       dockerfile: Dockerfile
     container_name: healthflow-api-gateway
     ports:
-      - "8080:8080"
+      - "8085:8080"
     environment:
       PROXY_FHIR_URL: http://proxy-fhir:8081
       DEID_URL: http://deid:5000
       FEATURIZER_URL: http://featurizer:5001
       ML_PREDICTOR_URL: http://ml-predictor:5002
       SCORE_API_URL: http://score-api:5003
+      AUDIT_FAIRNESS_URL: http://audit-fairness:5004
     depends_on:
       - proxy-fhir
       - deid
@@ -129,11 +148,12 @@ services:
       dockerfile: Dockerfile
     container_name: healthflow-dashboard
     ports:
-      - "3000:3000"
+      - "3002:3000"
     environment:
-      VITE_API_GATEWAY_URL: http://localhost:8080
+      VITE_API_GATEWAY_URL: http://localhost:8085
     depends_on:
       - api-gateway
+
 
 volumes:
   postgres_data:

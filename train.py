@@ -107,6 +107,49 @@ print(f"\n🩺 Colonnes de signes vitaux: {vital_cols}")
 
 
 # %%
+# CELL 7.5: Correlation Analysis
+print("\n🔗 === ANALYSE DE CORRÉLATION ===\n")
+
+# Calculate correlation matrix for numeric features
+numeric_df = df_raw.select_dtypes(include=[np.number])
+correlation_matrix = numeric_df.corr()
+
+# Plot correlation heatmap
+plt.figure(figsize=(20, 16))
+sns.heatmap(
+    correlation_matrix, 
+    annot=False,  # Don't show values (too many features)
+    cmap='coolwarm', 
+    center=0,
+    vmin=-1, 
+    vmax=1,
+    square=True,
+    linewidths=0.5,
+    cbar_kws={"shrink": 0.8}
+)
+plt.title('Feature Correlation Heatmap - Readmission Prediction', fontsize=16, fontweight='bold')
+plt.tight_layout()
+plt.show()
+
+# Show top correlations with target
+if TARGET_COL in correlation_matrix.columns:
+    target_corr = correlation_matrix[TARGET_COL].sort_values(ascending=False)
+    print(f"\n📊 Top 15 correlations with {TARGET_COL}:")
+    print(target_corr.head(15))
+    print(f"\n📊 Bottom 15 correlations with {TARGET_COL}:")
+    print(target_corr.tail(15))
+    
+    # Plot top correlations
+    plt.figure(figsize=(10, 8))
+    top_features = pd.concat([target_corr.head(15), target_corr.tail(15)]).drop(TARGET_COL)
+    top_features.sort_values().plot(kind='barh', color=['red' if x < 0 else 'green' for x in top_features])
+    plt.title(f'Top Features Correlated with {TARGET_COL}', fontsize=14, fontweight='bold')
+    plt.xlabel('Correlation Coefficient')
+    plt.tight_layout()
+    plt.show()
+
+
+# %%
 # CELL 8: Data Cleaning - Drop High-Null Columns
 print("🧹 === NETTOYAGE DES DONNÉES ===\n")
 
@@ -362,7 +405,7 @@ print(f"✅ Predictions generated: {len(y_pred)} samples")
 print(f"📊 Prediction distribution:\n{pd.Series(y_pred).value_counts()}")
 
 # Calculate metrics
-from sklearn.metrics import accuracy_score, roc_auc_score, classification_report
+from sklearn.metrics import accuracy_score, roc_auc_score, classification_report, confusion_matrix
 
 accuracy = accuracy_score(y_test, y_pred)
 roc_auc = roc_auc_score(y_test, y_prob)
@@ -371,6 +414,48 @@ print(f"\n🎯 Test Accuracy: {accuracy:.4f}")
 print(f"📈 Test ROC-AUC: {roc_auc:.4f}")
 print(f"\n📋 Classification Report:")
 print(classification_report(y_test, y_pred, target_names=['No Readmission', 'Readmission']))
+
+# Generate and visualize confusion matrix
+print(f"\n🔲 === CONFUSION MATRIX ===\n")
+cm = confusion_matrix(y_test, y_pred)
+print(cm)
+
+# Visualize confusion matrix
+plt.figure(figsize=(10, 8))
+sns.heatmap(
+    cm, 
+    annot=True, 
+    fmt='d', 
+    cmap='Blues',
+    xticklabels=['No Readmission', 'Readmission'],
+    yticklabels=['No Readmission', 'Readmission'],
+    cbar_kws={'label': 'Count'}
+)
+plt.title('Confusion Matrix - Test Set', fontsize=16, fontweight='bold')
+plt.ylabel('Actual', fontsize=12)
+plt.xlabel('Predicted', fontsize=12)
+plt.tight_layout()
+plt.show()
+
+# Calculate and display confusion matrix metrics
+tn, fp, fn, tp = cm.ravel()
+print(f"\n📊 Confusion Matrix Breakdown:")
+print(f"   True Negatives (TN):  {tn:>6} - Correctly predicted No Readmission")
+print(f"   False Positives (FP): {fp:>6} - Incorrectly predicted Readmission")
+print(f"   False Negatives (FN): {fn:>6} - Missed Readmissions")
+print(f"   True Positives (TP):  {tp:>6} - Correctly predicted Readmission")
+
+# Calculate additional metrics
+sensitivity = tp / (tp + fn) if (tp + fn) > 0 else 0
+specificity = tn / (tn + fp) if (tn + fp) > 0 else 0
+precision = tp / (tp + fp) if (tp + fp) > 0 else 0
+f1_score = 2 * (precision * sensitivity) / (precision + sensitivity) if (precision + sensitivity) > 0 else 0
+
+print(f"\n📈 Additional Metrics:")
+print(f"   Sensitivity (Recall): {sensitivity:.4f} - % of actual readmissions caught")
+print(f"   Specificity:          {specificity:.4f} - % of non-readmissions correctly identified")
+print(f"   Precision:            {precision:.4f} - % of predicted readmissions that are correct")
+print(f"   F1-Score:             {f1_score:.4f} - Harmonic mean of precision and recall")
 
 
 # %%

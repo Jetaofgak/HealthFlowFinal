@@ -1,4 +1,9 @@
-FROM python:3.11-slim
+# Python build stage - using uv for faster package installation
+FROM ghcr.io/astral-sh/uv:python3.12-bookworm-slim AS builder
+
+ENV UV_SYSTEM_PYTHON=1
+ENV UV_COMPILE_BYTECODE=1
+ENV UV_HTTP_TIMEOUT=300
 
 WORKDIR /app
 
@@ -8,9 +13,9 @@ RUN apt-get update && apt-get install -y \
     postgresql-client \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy requirements and install Python dependencies
+# Copy requirements and install dependencies
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+RUN uv pip install -r requirements.txt
 
 # Copy application code
 COPY . .
@@ -18,5 +23,5 @@ COPY . .
 # Expose port
 EXPOSE 5003
 
-# Run the application
-CMD ["python", "app.py"]
+# Run with Uvicorn
+CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "5003", "--reload"]

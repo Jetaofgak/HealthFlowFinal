@@ -5,6 +5,7 @@ from models.feature_vector import PatientFeatures, Base
 from extractors.patient_features import PatientFeatureExtractor
 from extractors.vital_signs_features import VitalSignsFeatureExtractor
 from extractors.lab_results_features import LabResultsFeatureExtractor
+from services.clinical_nlp import ClinicalNLPExtractor
 from config import Config
 from datetime import datetime
 import logging
@@ -23,6 +24,7 @@ Session = sessionmaker(bind=engine)
 patient_extractor = PatientFeatureExtractor()
 vitals_extractor = VitalSignsFeatureExtractor()
 labs_extractor = LabResultsFeatureExtractor()
+nlp_extractor = ClinicalNLPExtractor()
 
 @feature_bp.route('/health', methods=['GET'])
 def health():
@@ -32,129 +34,34 @@ def health():
         'service': 'Featurizer'
     })
 
+from services.feature_service import FeatureExtractionService
+
+extraction_service = FeatureExtractionService()
+
 @feature_bp.route('/extract/patient/<patient_id>', methods=['POST'])
 def extract_patient_features(patient_id):
-    """Extrait les features d'un patient spécifique depuis les données anonymisées"""
-    try:
-        session = Session()
-        
-        # Requête pour récupérer le patient anonymisé
-        from sqlalchemy import text
-        query = text("""
-            SELECT resource_data 
-            FROM fhir_resources_anonymized 
-            WHERE anonymized_fhir_id = :patient_id 
-            AND resource_type = 'Patient'
-        """)
-        
-        patient_result = session.execute(query, {'patient_id': patient_id}).fetchone()
-        
-        if not patient_result:
-            return jsonify({'error': 'Patient not found'}), 404
-        
-        # Parser le JSON
-        patient_data = json.loads(patient_result[0]) if isinstance(patient_result[0], str) else patient_result[0]
-        
-        # Récupérer les observations du patient
-        obs_query = text("""
-            SELECT resource_data 
-            FROM fhir_resources_anonymized 
-            WHERE resource_data::json->'subject'->>'reference' = :patient_ref
-            AND resource_type = 'Observation'
-        """)
-        
-        obs_results = session.execute(obs_query, {'patient_ref': f'Patient/{patient_id}'}).fetchall()
-        observations = [json.loads(row[0]) if isinstance(row[0], str) else row[0] for row in obs_results]
-        
-        # Extraire les features
-        patient_features = patient_extractor.extract(patient_data)
-        vitals_features = vitals_extractor.extract(observations)
-        labs_features = labs_extractor.extract(observations)
-        
-        # Calculer les features cliniques
-        clinical_features = {}
-        if observations:
-            clinical_features['total_observations'] = len(observations)
-            
-            # Calculer la durée d'observation
-            dates = []
-            for obs in observations:
-                if 'effectiveDateTime' in obs:
-                    try:
-                        date = datetime.fromisoformat(obs['effectiveDateTime'].replace('Z', '+00:00'))
-                        dates.append(date)
-                    except:
-                        pass
-            
-            if len(dates) > 1:
-                dates.sort()
-                span = (dates[-1] - dates[0]).days
-                clinical_features['observation_span_days'] = span
-                clinical_features['consultation_frequency'] = round(len(observations) / max(span, 1), 4)
-        
-        # Combiner toutes les features
-        all_features = {**patient_features, **vitals_features, **labs_features, **clinical_features}
-        
-        # Sauvegarder dans la base
-        existing = session.query(PatientFeatures).filter_by(patient_id=patient_id).first()
-        
-        if existing:
-            # Mettre à jour
-            for key, value in all_features.items():
-                if hasattr(existing, key):
-                    setattr(existing, key, value)
-            existing.features_json = all_features
-            existing.extraction_date = datetime.utcnow()
-        else:
-            # Créer nouveau
-            feature_record = PatientFeatures(
-                patient_id=patient_id,
-                age=all_features.get('age'),
-                gender=all_features.get('gender'),
-                bmi=all_features.get('bmi'),
-                avg_systolic_bp=all_features.get('avg_systolic_bp'),
-                avg_diastolic_bp=all_features.get('avg_diastolic_bp'),
-                height_cm=all_features.get('height_cm'),
-                weight_kg=all_features.get('weight_kg'),
-                avg_cholesterol=all_features.get('avg_cholesterol'),
-                avg_hdl=all_features.get('avg_hdl'),
-                avg_ldl=all_features.get('avg_ldl'),
-                avg_triglycerides=all_features.get('avg_triglycerides'),
-                avg_hemoglobin=all_features.get('avg_hemoglobin'),
-                total_observations=all_features.get('total_observations'),
-                observation_span_days=all_features.get('observation_span_days'),
-                consultation_frequency=all_features.get('consultation_frequency'),
-                features_json=all_features
-            )
-            session.add(feature_record)
-        
-        session.commit()
-        session.close()
-        
+    """Extrait les features d'un patient spécifique"""
+    features, status = extraction_service.extract_features(patient_id)
+    
+    if features:
         return jsonify({
             'status': 'success',
             'patient_id': patient_id,
-            'features': all_features
+            'features': features
         }), 200
-        
-    except Exception as e:
-        logger.error(f"Error extracting features: {e}")
-        return jsonify({'error': str(e)}), 500
+    elif status == "Patient not found and no existing record":
+        return jsonify({'error': status}), 404
+    else:
+        return jsonify({'error': status}), 500
 
 @feature_bp.route('/extract/all', methods=['POST'])
 def extract_all_features():
-    """Extrait les features de tous les patients anonymisés"""
+    """Extrait les features de tous les patients existants"""
     try:
         session = Session()
-        
-        # Récupérer tous les patients anonymisés
+        # Retrieve all patient IDs from the reliable source (patient_features)
         from sqlalchemy import text
-        query = text("""
-            SELECT anonymized_fhir_id 
-            FROM fhir_resources_anonymized 
-            WHERE resource_type = 'Patient'
-        """)
-        
+        query = text("SELECT patient_id FROM patient_features")
         patients = session.execute(query).fetchall()
         session.close()
         
@@ -164,12 +71,11 @@ def extract_all_features():
         for patient in patients:
             patient_id = patient[0]
             try:
-                # Appeler extract_patient_features pour chaque patient
-                result = extract_patient_features(patient_id)
-                if result[1] == 200:
+                features, status = extraction_service.extract_features(patient_id)
+                if features:
                     results.append(patient_id)
                 else:
-                    errors.append({'patient_id': patient_id, 'error': result[0].get_json()})
+                    errors.append({'patient_id': patient_id, 'error': status})
             except Exception as e:
                 errors.append({'patient_id': patient_id, 'error': str(e)})
         

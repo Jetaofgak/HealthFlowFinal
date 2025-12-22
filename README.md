@@ -182,9 +182,51 @@ python train.py  # Automatically uses dataset_with_nlp.csv
 cp xgboost_readmission_model.ubj ml-predictor/
 docker-compose restart ml-predictor
 
-# 8. Access dashboard to see improved predictions
+# 9. Populate microservice tables for dashboard (IMPORTANT!)
+cd scripts
+psql -h localhost -p 5433 -U postgres -d healthflow_fhir -f populate_microservice_tables.sql
+# → Populates patient_features (3,607 rows) from dataset_final
+
+# 10. Generate predictions using ML-Predictor service
+curl -X POST http://localhost:8085/api/v1/predictions/predict/all
+# → Creates 3,607 risk predictions using the trained XGBoost model
+
+# 11. Access dashboard to see predictions
 open http://localhost:3000
+# Dashboard should now display all patient data and predictions
 ```
+
+## 💾 Database Backup & Restore
+
+**Skip the entire workflow!** Share the pre-built database with your team.
+
+### **Create Backup** (You - once)
+
+```bash
+cd scripts
+python backup_database.py
+# → Creates database_backups/healthflow_db.sql.gz (1.27 GB)
+# → Contains: 3,607 patients, 2M+ observations, 292K encounters
+```
+
+### **Restore Backup** (Team - instant setup)
+
+```bash
+# 1. Clone repository
+git clone https://github.com/Jetaofgak/HealthFlowFinal.git
+cd HealthFlowFinal
+
+# 2. Start Docker
+docker-compose up -d
+
+# 3. Restore database (cross-platform: Windows/Mac/Linux)
+cd scripts
+python restore_database.py database_backups/healthflow_db.sql.gz
+
+# 4. Ready! Skip to step 6 (NLP) or step 7 (training)
+```
+
+**Benefits**: Saves 2+ hours, identical data, cross-platform, Git LFS tracked
 
 ### Quick Workflow (Structured Features Only)
 
@@ -243,6 +285,47 @@ curl http://localhost:8080/health  # API Gateway
 - **Setup Guide**: [docs/SYNTHEA_SETUP.md](docs/SYNTHEA_SETUP.md)
 - **Quick Start**: [docs/QUICK_START_SYNTHEA.md](docs/QUICK_START_SYNTHEA.md)
 - **Project Overview**: [project.md](project.md)
+- **Dashboard Issue Fix**: [PROBLEM.md](PROBLEM.md) - Troubleshooting dashboard zeros/N/A values
+
+## ⚠️ Known Limitations
+
+### "Sync Patients" Feature
+
+The "Sync" button in the dashboard connects to a public FHIR server (`r4.smarthealthit.org`) for testing purposes.
+
+**Status**: ✅ Working (small datasets only)
+
+**Limitations**:
+
+- The public server is rate-limited and slow
+- The sync process is synchronous and may timeout for requests > 20 patients
+- Designed for demonstration and testing, not for production datasets
+
+**DNS Configuration**: The ProxyFHIR service includes Google DNS (8.8.8.8, 8.8.4.4) to ensure external connectivity from Docker containers.
+
+**Recommended for Production**:
+
+- **Use the local generation workflow** (`generate_synthea_data.sh`) for datasets > 20 patients
+- This offline method is 100% reliable, faster, and produces better data quality with clinical notes
+- Successfully tested with 1,000-10,000 patients using local generation
+
+### Pipeline Anonymization Performance
+
+The `/api/v1/deid/anonymize/all` endpoint is optimized for large datasets by processing only patient records.
+
+**Optimization**:
+
+- Anonymizes 3,607 patients in ~4 seconds
+- Skips 1.86M+ observations to prevent HTTP timeout
+- Observation anonymization disabled (not required for batch ML workflow)
+
+**Note**: This optimization is for the batch processing workflow. Real-time clinical workflows requiring full GDPR/HIPAA compliance should implement batched observation processing.
+
+### API Gateway Rate Limiting
+
+Rate limiting has been disabled in development to prevent false 429 errors during bulk operations.
+
+**Note**: For production deployment, implement Redis-based rate limiting or use API gateway solutions (Kong, Apigee) instead of the in-memory counter.
 
 ## 🛠️ Troubleshooting
 
@@ -276,6 +359,77 @@ All services are configured to allow CORS from `localhost:3000`. If issues persi
 # Rebuild Python services
 docker-compose build deid featurizer ml-predictor score-api
 docker-compose up -d
+```
+
+### Dashboard Showing Zeros or N/A
+
+If the dashboard displays all zeros or N/A values despite having data in the database:
+
+**Cause**: Microservice tables (`patient_features`, `risk_predictions`) are empty
+
+**Solution**:
+
+```bash
+# 1. Verify dataset exists
+export PGPASSWORD='qwerty'
+psql -h localhost -p 5433 -U postgres -d healthflow_fhir -c "SELECT COUNT(*) FROM dataset_final;"
+# Should show 3,607 rows
+
+# 2. Populate microservice tables
+cd scripts
+psql -h localhost -p 5433 -U postgres -d healthflow_fhir -f populate_microservice_tables.sql
+
+# 3. Generate predictions
+curl -X POST http://localhost:8085/api/v1/predictions/predict/all
+
+# 4. Verify data
+psql -h localhost -p 5433 -U postgres -d healthflow_fhir -c "
+  SELECT 'patient_features', COUNT(*) FROM patient_features
+  UNION ALL
+  SELECT 'risk_predictions', COUNT(*) FROM risk_predictions;"
+# Both should show 3,607 rows
+
+# 5. Refresh dashboard
+open http://localhost:3000
+```
+
+**See [PROBLEM.md](PROBLEM.md) for detailed explanation**
+
+### FHIR Sync Errors (500 Internal Server Error)
+
+If the FHIR sync endpoint fails with 500 errors:
+
+**Common Causes**:
+
+1. **DNS Resolution Failure**: `UnknownHostException: r4.smarthealthit.org`
+   - **Solution**: Verify ProxyFHIR has DNS configured in `docker-compose.yml`:
+   ```yaml
+   proxy-fhir:
+     dns:
+       - 8.8.8.8
+       - 8.8.4.4
+   ```
+
+2. **Database Constraint Violation**: `null value in column "patient_id"`
+   - **Solution**: Ensure `FhirBundle` entity has `patientId` field and `saveFhirBundle` extracts it from queryParams
+
+3. **Timeout for Large Requests**: Requests > 20 patients may timeout
+   - **Solution**: Use smaller batch sizes (5-10 patients) or use local generation workflow
+
+**Test Sync**:
+
+```bash
+# Test with small dataset
+curl -X POST "http://localhost:8085/api/v1/fhir/sync/bulk?count=5"
+
+# Should return:
+# {"synced":5,"failed":0,"totalResources":~250,"status":"success"}
+```
+
+**Check Logs**:
+
+```bash
+docker-compose logs --tail=50 proxy-fhir
 ```
 
 ## 👥 Team

@@ -16,4 +16,18 @@ public class ProxyFhirApplication {
 	public ObjectMapper objectMapper() {
 		return new ObjectMapper();
 	}
+
+	@Bean
+	public org.springframework.web.servlet.config.annotation.WebMvcConfigurer corsConfigurer() {
+		return new org.springframework.web.servlet.config.annotation.WebMvcConfigurer() {
+			@Override
+			public void addCorsMappings(org.springframework.web.servlet.config.annotation.CorsRegistry registry) {
+				registry.addMapping("/**")
+						.allowedOrigins("http://localhost:3000", "http://localhost:3002")
+						.allowedMethods("GET", "POST", "PUT", "DELETE", "OPTIONS")
+						.allowedHeaders("*")
+						.allowCredentials(true);
+			}
+		};
+	}
 }

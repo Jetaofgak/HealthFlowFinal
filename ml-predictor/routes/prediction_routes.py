@@ -330,4 +330,82 @@ def predict_readmission():
     except Exception as e:
         logger.error(f"Prediction error: {str(e)}")
         return jsonify({'error': str(e)}), 500
+
+@prediction_bp.route('/patients', methods=['GET'])
+def get_all_patients():
+    """Get all patients with their features and risk predictions"""
+    try:
+        session = Session()
+        
+        # JOIN patient_features with risk_predictions
+        query = text("""
+            SELECT 
+                pf.patient_id,
+                pf.age,
+                pf.gender,
+                pf.bmi,
+                pf.avg_heart_rate,
+                pf.avg_systolic_bp,
+                pf.avg_diastolic_bp,
+                pf.avg_cholesterol,
+                pf.avg_hdl,
+                pf.avg_ldl,
+                pf.height_cm,
+                pf.weight_kg,
+                pf.features_json,
+                rp.framingham_score,
+                rp.risk_category,
+                rp.risk_factors,
+                rp.recommendations
+            FROM patient_features pf
+            LEFT JOIN risk_predictions rp ON pf.patient_id = rp.patient_id
+        """)
+        
+        results = session.execute(query).fetchall()
+        session.close()
+        
+        patients = []
+        for row in results:
+            patient = {
+                'patient_id': row[0],
+                'age': row[1],
+                'gender': row[2],
+                'bmi': float(row[3]) if row[3] else None,
+                'vit_heart_rate': float(row[4]) if row[4] else None,
+                'vit_bp_systolic': float(row[5]) if row[5] else None,
+                'vit_bp_diastolic': float(row[6]) if row[6] else None,
+                'avg_cholesterol': float(row[7]) if row[7] else None,
+                'avg_hdl': float(row[8]) if row[8] else None,
+                'avg_ldl': float(row[9]) if row[9] else None,
+                'height_cm': float(row[10]) if row[10] else None,
+                'weight_kg': float(row[11]) if row[11] else None,
+                'risk_score': float(row[13]) if row[13] else 0,
+                'framingham_score': float(row[13]) if row[13] else 0,
+                'risk_level': row[14] or 'unknown',
+                'risk_factors': row[15],
+                'recommendations': row[16]
+            }
+            
+            # Extract NLP features from features_json if available
+            if row[12]:  # features_json
+                features_json = row[12]
+                patient.update({
+                    'nlp_num_conditions': features_json.get('num_conditions', 0),
+                    'nlp_num_medications': features_json.get('num_medications', 0),
+                    'nlp_has_diabetes': features_json.get('has_diabetes', 0),
+                    'nlp_has_hypertension': features_json.get('has_hypertension', 0),
+                    'nlp_has_chf': features_json.get('has_chf', 0),
+                    'nlp_polypharmacy': features_json.get('polypharmacy', 0)
+                })
+            
+            patients.append(patient)
+        
+        return jsonify({
+            'total': len(patients),
+            'patients': patients
+        }), 200
+        
+    except Exception as e:
+        logger.error(f"Error getting patients: {e}")
+        return jsonify({'error': str(e)}), 500
  

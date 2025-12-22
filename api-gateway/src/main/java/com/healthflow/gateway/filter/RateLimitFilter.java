@@ -12,7 +12,8 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
 
-@Component
+// @Component  // DISABLED: Rate limiter has no reset mechanism (accumulates forever)
+// TODO: Implement proper sliding window rate limiting with Redis or scheduled cleanup
 public class RateLimitFilter implements GlobalFilter, Ordered {
 
     private final Map<String, AtomicInteger> requestCounts = new ConcurrentHashMap<>();

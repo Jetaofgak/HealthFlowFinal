@@ -22,7 +22,7 @@ def create_app(config_name='development'):
     # Enregistrer les blueprints
     from routes.health_routes import health_bp
 
-    app.register_blueprint(health_bp)
+    app.register_blueprint(health_bp, url_prefix='/api/v1')
     app.register_blueprint(prediction_bp, url_prefix='/api/v1')
     
     logger.info("ML Predictor microservice started successfully")

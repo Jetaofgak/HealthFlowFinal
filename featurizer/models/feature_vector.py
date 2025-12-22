@@ -35,6 +35,25 @@ class PatientFeatures(Base):
     observation_span_days = Column(Integer)
     consultation_frequency = Column(Float)
     
+    # NLP Features
+    nlp_num_conditions = Column(Integer)
+    nlp_has_diabetes = Column(Integer)
+    nlp_has_hypertension = Column(Integer)
+    nlp_has_chf = Column(Integer)
+    nlp_has_copd = Column(Integer)
+    nlp_has_ckd = Column(Integer)
+    
+    nlp_num_medications = Column(Integer)
+    nlp_polypharmacy = Column(Integer)
+    
+    nlp_num_symptoms = Column(Integer)
+    nlp_has_pain = Column(Integer)
+    nlp_has_dyspnea = Column(Integer)
+    
+    nlp_note_length = Column(Integer)
+    nlp_note_count = Column(Integer)
+    nlp_avg_note_length = Column(Float)
+    
     # Métadonnées
     features_json = Column(JSON)  # Toutes les features en JSON
     extraction_date = Column(DateTime, default=datetime.utcnow)
@@ -70,6 +89,22 @@ class PatientFeatures(Base):
                 'observation_span_days': self.observation_span_days,
                 'consultation_frequency': self.consultation_frequency
             },
+            # NLP Features (flat structure for consistency)
+            'nlp_num_conditions': self.nlp_num_conditions,
+            'nlp_has_diabetes': self.nlp_has_diabetes,
+            'nlp_has_hypertension': self.nlp_has_hypertension,
+            'nlp_has_chf': self.nlp_has_chf,
+            'nlp_has_copd': self.nlp_has_copd,
+            'nlp_has_ckd': self.nlp_has_ckd,
+            'nlp_num_medications': self.nlp_num_medications,
+            'nlp_polypharmacy': self.nlp_polypharmacy,
+            'nlp_num_symptoms': self.nlp_num_symptoms,
+            'nlp_has_pain': self.nlp_has_pain,
+            'nlp_has_dyspnea': self.nlp_has_dyspnea,
+            'nlp_note_length': self.nlp_note_length,
+            'nlp_note_count': self.nlp_note_count,
+            'nlp_avg_note_length': self.nlp_avg_note_length,
+            
             'extraction_date': self.extraction_date.isoformat() if self.extraction_date else None
         }
  
