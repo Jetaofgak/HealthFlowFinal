@@ -57,7 +57,10 @@ pipeline {
                     
                     // Get Git commit hash (Windows compatible)
                     env.GIT_SHORT_COMMIT = powershell(script: "git rev-parse --short HEAD", returnStdout: true).trim()
-                    env.IMAGE_TAG = "${env.GIT_BRANCH == 'main' ? 'latest' : env.GIT_BRANCH}-${env.VERSION}-${env.GIT_SHORT_COMMIT}"
+                    
+                    // Extract branch name (remove origin/ prefix and sanitize for Docker tags)
+                    def branchName = env.GIT_BRANCH.replaceAll('^origin/', '').replaceAll('/', '-')
+                    env.IMAGE_TAG = "${branchName == 'main' ? 'latest' : branchName}-${env.VERSION}-${env.GIT_SHORT_COMMIT}"
                     
                     // Display build information
                     echo """
