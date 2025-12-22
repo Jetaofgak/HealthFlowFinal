@@ -289,19 +289,25 @@ curl http://localhost:8080/health  # API Gateway
 
 ## ⚠️ Known Limitations
 
-### "Sync 100 Patients" Feature
+### "Sync Patients" Feature
 
-The "Sync" button in the dashboard, enabling the `FhirSyncService` to fetching data from a public FHIR server (`r4.smarthealthit.org`), is **experimental**.
+The "Sync" button in the dashboard connects to a public FHIR server (`r4.smarthealthit.org`) for testing purposes.
 
-**Limitation**:
+**Status**: ✅ Working (small datasets only)
 
-- The public server is rate-limited and slow.
-- The sync process is synchronous and may timeout for requests > 10 patients (`500 Internal Server Error`).
+**Limitations**:
 
-**Recommended Workaround**:
+- The public server is rate-limited and slow
+- The sync process is synchronous and may timeout for requests > 20 patients
+- Designed for demonstration and testing, not for production datasets
 
-- **Always use the local generation workflow** (`generate_synthea_data.sh`) for datasets > 10 patients.
-- This offline method is 100% reliable, faster, and produces better data quality with clinical notes.
+**DNS Configuration**: The ProxyFHIR service includes Google DNS (8.8.8.8, 8.8.4.4) to ensure external connectivity from Docker containers.
+
+**Recommended for Production**:
+
+- **Use the local generation workflow** (`generate_synthea_data.sh`) for datasets > 20 patients
+- This offline method is 100% reliable, faster, and produces better data quality with clinical notes
+- Successfully tested with 1,000-10,000 patients using local generation
 
 ### Pipeline Anonymization Performance
 
@@ -388,6 +394,43 @@ open http://localhost:3000
 ```
 
 **See [PROBLEM.md](PROBLEM.md) for detailed explanation**
+
+### FHIR Sync Errors (500 Internal Server Error)
+
+If the FHIR sync endpoint fails with 500 errors:
+
+**Common Causes**:
+
+1. **DNS Resolution Failure**: `UnknownHostException: r4.smarthealthit.org`
+   - **Solution**: Verify ProxyFHIR has DNS configured in `docker-compose.yml`:
+   ```yaml
+   proxy-fhir:
+     dns:
+       - 8.8.8.8
+       - 8.8.4.4
+   ```
+
+2. **Database Constraint Violation**: `null value in column "patient_id"`
+   - **Solution**: Ensure `FhirBundle` entity has `patientId` field and `saveFhirBundle` extracts it from queryParams
+
+3. **Timeout for Large Requests**: Requests > 20 patients may timeout
+   - **Solution**: Use smaller batch sizes (5-10 patients) or use local generation workflow
+
+**Test Sync**:
+
+```bash
+# Test with small dataset
+curl -X POST "http://localhost:8085/api/v1/fhir/sync/bulk?count=5"
+
+# Should return:
+# {"synced":5,"failed":0,"totalResources":~250,"status":"success"}
+```
+
+**Check Logs**:
+
+```bash
+docker-compose logs --tail=50 proxy-fhir
+```
 
 ## 👥 Team
 
