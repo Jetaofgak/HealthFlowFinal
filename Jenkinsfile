@@ -251,24 +251,30 @@ pipeline {
                 script {
                     echo "📤 Pushing Docker images to registry..."
                     
-                    docker.withRegistry("https://${DOCKER_REGISTRY}", DOCKER_CREDENTIALS_ID) {
-                        def allServices = JAVA_SERVICES + ',' + PYTHON_SERVICES + ',' + FRONTEND_SERVICES
+                    // Login to Docker Hub with PAT
+                    withCredentials([usernamePassword(credentialsId: DOCKER_CREDENTIALS_ID, usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASS')]) {
+                        bat """
+                            echo %DOCKER_PASS% | docker login -u %DOCKER_USER% --password-stdin
+                        """
+                    }
+                    
+                    // Push images
+                    def allServices = JAVA_SERVICES + ',' + PYTHON_SERVICES + ',' + FRONTEND_SERVICES
+                    
+                    allServices.split(',').each { service ->
+                        def serviceName = service.toLowerCase()
+                        def imageName = "${DOCKER_USERNAME}/healthflow-${serviceName}"
                         
-                        allServices.split(',').each { service ->
-                            def serviceName = service.toLowerCase()
-                            def imageName = "${DOCKER_USERNAME}/healthflow-${serviceName}"
-                            
-                            echo "Pushing ${imageName}:${env.IMAGE_TAG}"
-                            
-                            // Push with build-specific tag (Windows compatible)
-                            bat "docker push ${imageName}:${env.IMAGE_TAG}"
-                            
-                            // Tag and push as 'latest' for main branch
-                            bat "docker tag ${imageName}:${env.IMAGE_TAG} ${imageName}:latest"
-                            bat "docker push ${imageName}:latest"
-                            
-                            echo "✅ Pushed ${imageName}"
-                        }
+                        echo "Pushing ${imageName}:${env.IMAGE_TAG}"
+                        
+                        // Push with build-specific tag (Windows compatible)
+                        bat "docker push ${imageName}:${env.IMAGE_TAG}"
+                        
+                        // Tag and push as 'latest' for main branch
+                        bat "docker tag ${imageName}:${env.IMAGE_TAG} ${imageName}:latest"
+                        bat "docker push ${imageName}:latest"
+                        
+                        echo "✅ Pushed ${imageName}"
                     }
                 }
             }
