@@ -13,6 +13,9 @@ pipeline {
         // Database credentials
         POSTGRES_PASSWORD_ID = 'postgres-password'
         
+        // Docker Compose file
+        COMPOSE_FILE = 'docker-compose-joblib.yml'
+        
         // Version tagging
         VERSION = "${env.BUILD_NUMBER}"
         GIT_SHORT_COMMIT = sh(script: "git rev-parse --short HEAD", returnStdout: true).trim()
@@ -59,6 +62,7 @@ pipeline {
                     Commit: ${GIT_SHORT_COMMIT}
                     Build: #${env.BUILD_NUMBER}
                     Image Tag: ${IMAGE_TAG}
+                    Compose File: ${COMPOSE_FILE}
                     ════════════════════════════════════════
                     """
                 }
@@ -259,19 +263,19 @@ pipeline {
                         export DOCKER_USERNAME=${DOCKER_USERNAME}
                         
                         # Pull latest images
-                        docker-compose pull
+                        docker-compose -f ${COMPOSE_FILE} pull
                         
                         # Stop and remove existing containers
-                        docker-compose down
+                        docker-compose -f ${COMPOSE_FILE} down
                         
                         # Start services with new images
-                        docker-compose up -d
+                        docker-compose -f ${COMPOSE_FILE} up -d
                         
                         # Wait for services to be healthy
                         sleep 30
                         
                         # Check service health
-                        docker-compose ps
+                        docker-compose -f ${COMPOSE_FILE} ps
                     """
                     
                     echo "✅ Deployment completed!"
@@ -320,7 +324,7 @@ pipeline {
                     }
                     
                     if (!allHealthy) {
-                        echo "⚠️ Some services are not healthy. Check logs with: docker-compose logs"
+                        echo "⚠️ Some services are not healthy. Check logs with: docker-compose -f ${COMPOSE_FILE} logs"
                         currentBuild.result = 'UNSTABLE'
                     } else {
                         echo "✅ All services are healthy!"
@@ -366,7 +370,7 @@ pipeline {
         always {
             script {
                 // Archive logs
-                sh 'docker-compose logs > docker-compose.log 2>&1 || true'
+                sh "docker-compose -f ${COMPOSE_FILE} logs > docker-compose.log 2>&1 || true"
                 archiveArtifacts artifacts: 'docker-compose.log', allowEmptyArchive: true
                 
                 echo "📊 Build #${env.BUILD_NUMBER} completed at ${new Date()}"

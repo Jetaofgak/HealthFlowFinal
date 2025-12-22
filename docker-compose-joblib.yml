@@ -1,0 +1,170 @@
+version: '3.8'
+
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:15-alpine
+    container_name: healthflow-postgres
+    environment:
+      POSTGRES_DB: healthflow_fhir
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: qwerty
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U postgres" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ProxyFHIR Service (Java)
+  proxy-fhir:
+    image: ${DOCKER_USERNAME:-taoufikjeta}/healthflow-proxy-fhir:${IMAGE_TAG:-latest}
+    build:
+      context: ./proxy-fhir
+      dockerfile: Dockerfile
+    container_name: healthflow-proxy-fhir
+    ports:
+      - "8081:8081"
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/healthflow_fhir
+    dns:
+      - 8.8.8.8
+      - 8.8.4.4
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  # DeID Service (Python)
+  deid:
+    image: ${DOCKER_USERNAME:-taoufikjeta}/healthflow-deid:${IMAGE_TAG:-latest}
+    build:
+      context: ./deID
+      dockerfile: Dockerfile
+    container_name: healthflow-deid
+    ports:
+      - "5000:5000"
+    environment:
+      SQLALCHEMY_DATABASE_URI: postgresql://postgres:qwerty@postgres:5432/healthflow_fhir
+      PORT: 5000
+      DB_HOST: postgres
+      DB_PORT: 5432
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  # Featurizer Service (Python)
+  featurizer:
+    image: ${DOCKER_USERNAME:-taoufikjeta}/healthflow-featurizer:${IMAGE_TAG:-latest}
+    build:
+      context: ./featurizer
+      dockerfile: Dockerfile
+    container_name: healthflow-featurizer
+    ports:
+      - "5001:5001"
+    environment:
+      SQLALCHEMY_DATABASE_URI: postgresql://postgres:qwerty@postgres:5432/healthflow_fhir
+      PORT: 5001
+      DB_HOST: postgres
+      DB_PORT: 5432
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  # ML Predictor Service (Python) - Configured for .joblib model
+  ml-predictor:
+    image: ${DOCKER_USERNAME:-taoufikjeta}/healthflow-ml-predictor:${IMAGE_TAG:-latest}
+    build:
+      context: ./ml-predictor
+      dockerfile: Dockerfile
+    container_name: healthflow-ml-predictor
+    ports:
+      - "5002:5002"
+    environment:
+      SQLALCHEMY_DATABASE_URI: postgresql://postgres:qwerty@postgres:5432/healthflow_fhir
+      PORT: 5002
+      DB_HOST: postgres
+      DB_PORT: 5432
+      # Using .joblib model file
+      XGBOOST_MODEL_PATH: /app/xgboost_readmission_pack_100k.joblib
+    volumes:
+      # Mount the .joblib model file
+      - ./xgboost_readmission_pack_100k.joblib:/app/xgboost_readmission_pack_100k.joblib:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  # ScoreAPI Service (Python)
+  score-api:
+    image: ${DOCKER_USERNAME:-taoufikjeta}/healthflow-score-api:${IMAGE_TAG:-latest}
+    build:
+      context: ./score-api
+      dockerfile: Dockerfile
+    container_name: healthflow-score-api
+    ports:
+      - "5003:5003"
+    environment:
+      SQLALCHEMY_DATABASE_URI: postgresql://postgres:qwerty@postgres:5432/healthflow_fhir
+      PORT: 5003
+      ML_PREDICTOR_URL: http://ml-predictor:5002
+      JWT_SECRET_KEY: production-secret-key-change-me
+    depends_on:
+      - ml-predictor
+
+  # AuditFairness Service
+  audit-fairness:
+    image: ${DOCKER_USERNAME:-taoufikjeta}/healthflow-audit-fairness:${IMAGE_TAG:-latest}
+    build:
+      context: ./audit-fairness
+      dockerfile: Dockerfile
+    container_name: healthflow-audit-fairness
+    ports:
+      - "5004:5004"
+    environment:
+      SQLALCHEMY_DATABASE_URI: postgresql://postgres:qwerty@postgres:5432/healthflow_fhir
+      PORT: 5004
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  # API Gateway (Java)
+  api-gateway:
+    image: ${DOCKER_USERNAME:-taoufikjeta}/healthflow-api-gateway:${IMAGE_TAG:-latest}
+    build:
+      context: ./api-gateway
+      dockerfile: Dockerfile
+    container_name: healthflow-api-gateway
+    ports:
+      - "8085:8080"
+    environment:
+      PROXY_FHIR_URL: http://proxy-fhir:8081
+      DEID_URL: http://deid:5000
+      FEATURIZER_URL: http://featurizer:5001
+      ML_PREDICTOR_URL: http://ml-predictor:5002
+      SCORE_API_URL: http://score-api:5003
+      AUDIT_FAIRNESS_URL: http://audit-fairness:5004
+    depends_on:
+      - proxy-fhir
+      - deid
+      - featurizer
+      - ml-predictor
+      - score-api
+
+  # Dashboard Web (React)
+  dashboard:
+    image: ${DOCKER_USERNAME:-taoufikjeta}/healthflow-dashboard-web:${IMAGE_TAG:-latest}
+    build:
+      context: ./dashboard-web
+      dockerfile: Dockerfile
+    container_name: healthflow-dashboard
+    ports:
+      - "3002:3000"
+    environment:
+      VITE_API_GATEWAY_URL: http://localhost:8085
+    depends_on:
+      - api-gateway
+
+volumes:
+  postgres_data:
