@@ -8,7 +8,7 @@ pipeline {
         // Docker Hub credentials (configured in Jenkins Credentials)
         DOCKER_REGISTRY = 'docker.io'
         DOCKER_USERNAME = 'taoufikjeta'
-        DOCKER_CREDENTIALS_ID = 'dockerhub-credentials'
+        DOCKER_CREDENTIALS_ID = 'dockers-pat'
         
         // Git credentials
         GIT_CREDENTIALS_ID = 'github-credentials'
