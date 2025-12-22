@@ -26,6 +26,9 @@ public class FhirBundle {
     @Column(name = "bundle_type", nullable = false)
     private String bundleType;
 
+    @Column(name = "patient_id", nullable = false)
+    private String patientId;
+
     @JdbcTypeCode(SqlTypes.JSON)
     @Column(name = "bundle_data", nullable = false, columnDefinition = "jsonb")
     private Map<String, Object> bundleData;

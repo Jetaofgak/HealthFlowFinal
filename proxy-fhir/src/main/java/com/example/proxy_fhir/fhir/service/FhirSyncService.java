@@ -178,15 +178,30 @@ public class FhirSyncService {
             @SuppressWarnings("unchecked")
             Map<String, Object> bundleData = objectMapper.readValue(jsonString, Map.class);
 
+            // Extract patient ID from queryParams (format: "patientId=xxx")
+            String patientId = null;
+            if (queryParams != null && queryParams.contains("patientId=")) {
+                patientId = queryParams.substring(queryParams.indexOf("patientId=") + 10);
+                if (patientId.contains("&")) {
+                    patientId = patientId.substring(0, patientId.indexOf("&"));
+                }
+            }
+
+            if (patientId == null) {
+                log.error("Patient ID not found in queryParams: {}", queryParams);
+                throw new IllegalArgumentException("Patient ID is required but was not found in queryParams");
+            }
+
             FhirBundle fhirBundle = FhirBundle.builder()
                     .bundleType(bundleType)
+                    .patientId(patientId)
                     .bundleData(bundleData)
                     .totalResources(bundle.getEntry().size())
                     .queryParams(queryParams)
                     .build();
 
             bundleRepository.save(fhirBundle);
-            log.info("Saved FHIR Bundle: type={}, resources={}", bundleType, bundle.getEntry().size());
+            log.info("Saved FHIR Bundle: type={}, patientId={}, resources={}", bundleType, patientId, bundle.getEntry().size());
 
         } catch (Exception e) {
             log.error("Error saving FHIR bundle: {}", e.getMessage(), e);
