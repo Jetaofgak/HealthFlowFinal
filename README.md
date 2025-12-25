@@ -402,7 +402,9 @@ If the FHIR sync endpoint fails with 500 errors:
 **Common Causes**:
 
 1. **DNS Resolution Failure**: `UnknownHostException: r4.smarthealthit.org`
+
    - **Solution**: Verify ProxyFHIR has DNS configured in `docker-compose.yml`:
+
    ```yaml
    proxy-fhir:
      dns:
@@ -411,6 +413,7 @@ If the FHIR sync endpoint fails with 500 errors:
    ```
 
 2. **Database Constraint Violation**: `null value in column "patient_id"`
+
    - **Solution**: Ensure `FhirBundle` entity has `patientId` field and `saveFhirBundle` extracts it from queryParams
 
 3. **Timeout for Large Requests**: Requests > 20 patients may timeout
@@ -444,3 +447,6 @@ docker-compose logs --tail=50 proxy-fhir
 
 Academic project - EMSI 2026
 
+## Video
+
+[Watch the Demo](video/Screen%20Recording%202025-12-25%20at%208.41.20%E2%80%AFAM.mp4)
