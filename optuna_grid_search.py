@@ -129,9 +129,9 @@ if __name__ == "__main__":
     print("\n✨ All studies complete. Run: optuna-dashboard sqlite:///optuna_studies.db")
     
     print("\n🏆 BEST MODELS SUMMARY (High Val F1 & Low Gap)")
-    print("="*95)
-    print(f"{'Model':<15} | {'Val F1':<10} | {'Train F1':<10} | {'Gap':<10} | {'Trial ID':<8} | {'Best Params'}")
-    print("-" * 95)
+    print("="*120)
+    print(f"{'Model':<15} | {'Val F1':<8} | {'Val Loss':<8} | {'Train F1':<8} | {'Gap':<8} | {'Trial ID':<8} | {'Best Params'}")
+    print("-" * 120)
     
     for model_name in models:
         # Load the new study name
@@ -164,12 +164,15 @@ if __name__ == "__main__":
                 val_f1 = selected_trial.values[1]
                 gap = abs(train_f1 - val_f1)
                 
+                # Fetch loss from attributes (if available)
+                val_loss = selected_trial.user_attrs.get("val_loss", float("nan"))
+                
                 params_str = str(selected_trial.params)[:50] + "..." # Truncate for display
-                print(f"{model_name:<15} | {val_f1:.4f}     | {train_f1:.4f}     | {gap:.4f}     | #{selected_trial.number:<7} | {params_str}")
+                print(f"{model_name:<15} | {val_f1:.4f}   | {val_loss:.4f}   | {train_f1:.4f}   | {gap:.4f}   | #{selected_trial.number:<7} | {params_str}")
             else:
                 print(f"{model_name:<15} | No successful trials found.")
                 
         except Exception:
             print(f"{model_name:<15} | Study not found (Run optimization first).")
             
-    print("="*95)
+    print("="*120)
