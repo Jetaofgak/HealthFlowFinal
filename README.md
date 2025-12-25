@@ -51,10 +51,10 @@ python3 load_synthea_to_db.py synthea_output/fhir
 
 ## 📊 Architecture
 
-````
-FHIR Data → ProxyFHIR → DeID → Featurizer (BioBERT) → ML-Predictor (XGBoost) → ScoreAPI
+```
                                                                 ↓
                                                          AuditFairness
+```
 
 ## 🎥 Project Demo
 
@@ -91,7 +91,7 @@ python -m venv venv
 source venv/bin/activate  # On Windows: venv\Scripts\activate
 pip install -r requirements.txt
 python app.py
-````
+```
 
 #### Java Services (API Gateway, ProxyFHIR)
 
