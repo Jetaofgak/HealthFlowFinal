@@ -51,11 +51,14 @@ python3 load_synthea_to_db.py synthea_output/fhir
 
 ## 📊 Architecture
 
-```
+````
 FHIR Data → ProxyFHIR → DeID → Featurizer (BioBERT) → ML-Predictor (XGBoost) → ScoreAPI
                                                                 ↓
                                                          AuditFairness
-```
+
+## 🎥 Project Demo
+
+https://github.com/user-attachments/assets/663858f4-5e2b-433c-9d4a-674ba19d93c1
 
 ## 🔧 Services
 
@@ -70,6 +73,12 @@ FHIR Data → ProxyFHIR → DeID → Featurizer (BioBERT) → ML-Predictor (XGBo
 | **ScoreAPI**     | 5003 | Prediction API with JWT auth     |
 | **PostgreSQL**   | 5433 | Database                         |
 
+## 🔄 CI/CD Pipeline
+
+The project uses a Jenkins pipeline for automated building, testing, and deployment.
+
+![Jenkins stages (etapes du build)](image.png)
+
 ## 🧪 Development
 
 ### Run Individual Services
@@ -82,7 +91,7 @@ python -m venv venv
 source venv/bin/activate  # On Windows: venv\Scripts\activate
 pip install -r requirements.txt
 python app.py
-```
+````
 
 #### Java Services (API Gateway, ProxyFHIR)
 
@@ -446,8 +455,3 @@ docker-compose logs --tail=50 proxy-fhir
 ## 📄 License
 
 Academic project - EMSI 2026
-
-## Video
-https://github.com/user-attachments/assets/663858f4-5e2b-433c-9d4a-674ba19d93c1
-
-![Jenkins stages (etapes du build)](image.png)
