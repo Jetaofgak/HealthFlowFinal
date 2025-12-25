@@ -449,6 +449,11 @@ Academic project - EMSI 2026
 
 ## Video
 
+
+https://github.com/user-attachments/assets/663858f4-5e2b-433c-9d4a-674ba19d93c1
+
 [Watch the Demo](video/Screen%20Recording%202025-12-25%20at%208.41.20%E2%80%AFAM.mp4)
+
+
 
 ![Jenkins stages (etapes du build)](image.png)
