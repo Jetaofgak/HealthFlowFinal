@@ -450,3 +450,5 @@ Academic project - EMSI 2026
 ## Video
 
 [Watch the Demo](video/Screen%20Recording%202025-12-25%20at%208.41.20%E2%80%AFAM.mp4)
+
+![Jenkins stages (etapes du build)](image.png)
