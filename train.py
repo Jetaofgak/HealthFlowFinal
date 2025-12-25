@@ -24,257 +24,22 @@ print(f"📋 Configuration: {TARGET_COL} | Null threshold: {NULL_THRESHOLD*100}%
 
 
 # %%
-# CELL 3: Load Raw Data
+# CELL 3: Load Raw Data & Preprocess (Using Shared Loader)
+import time
+from utils.data_loader import load_and_preprocess_data, get_train_val_test_splits
+
 print(f"📂 Chargement de {CSV_PATH} ...")
 start_time = time.time()
 
-if not os.path.exists(CSV_PATH):
-    raise FileNotFoundError(f"❌ Fichier introuvable : {CSV_PATH}")
+# XGBoost handles NaNs natively, so we don't impute
+df, _ = load_and_preprocess_data(CSV_PATH, TARGET_COL, impute_missing=False)
+X_train, X_val, X_test, y_train, y_val, y_test = get_train_val_test_splits(df, TARGET_COL)
 
-df_raw = pd.read_csv(CSV_PATH)
-print(f"✅ Dataset brut chargé: {df_raw.shape[0]} lignes × {df_raw.shape[1]} colonnes")
-print(f"⏱️ Temps: {time.time() - start_time:.2f}s")
-
-
-# %%
-# CELL 4: Exploratory Data Analysis - Overview
-print("🔍 === ANALYSE EXPLORATOIRE DES DONNÉES ===\n")
-
-print(f"📊 Shape: {df_raw.shape}")
-print(f"\n📋 Colonnes ({len(df_raw.columns)}):")
-print(df_raw.columns.tolist())
-
-print(f"\n🎯 Target Distribution:")
-print(df_raw[TARGET_COL].value_counts())
-print(f"\nBalance: {df_raw[TARGET_COL].value_counts(normalize=True).round(3)}")
-
-print("\n👁️ Aperçu des premières lignes:")
-df_raw.head()
-
-
-# %%
-# CELL 5: EDA - Missing Values Analysis
-print("🕳️ === ANALYSE DES VALEURS MANQUANTES ===\n")
-
-# Calculate missing percentages
-missing_stats = pd.DataFrame({
-    'Column': df_raw.columns,
-    'Missing_Count': df_raw.isnull().sum(),
-    'Missing_Percent': (df_raw.isnull().sum() / len(df_raw) * 100).round(2)
-}).sort_values('Missing_Percent', ascending=False)
-
-print(missing_stats[missing_stats['Missing_Count'] > 0])
-
-# Visualize missing data
-plt.figure(figsize=(12, 6))
-missing_cols = missing_stats[missing_stats['Missing_Count'] > 0].head(15)
-sns.barplot(data=missing_cols, x='Missing_Percent', y='Column', palette='viridis')
-plt.xlabel('Pourcentage de valeurs manquantes (%)')
-plt.title('Top 15 colonnes avec valeurs manquantes')
-plt.tight_layout()
-plt.show()
-
-print(f"\n⚠️ Colonnes avec >{NULL_THRESHOLD*100}% de null:")
-high_null_cols = missing_stats[missing_stats['Missing_Percent'] > NULL_THRESHOLD*100]['Column'].tolist()
-print(high_null_cols if high_null_cols else "Aucune")
-
-
-# %%
-# CELL 6: EDA - Data Types & Unique Values
-print("🔢 === TYPES DE DONNÉES ===\n")
-print(df_raw.dtypes.value_counts())
-
-print("\n📊 Valeurs uniques par colonne:")
-unique_counts = df_raw.nunique().sort_values()
-print(unique_counts)
-
-# Identify binary columns
-binary_cols = [col for col in df_raw.columns if df_raw[col].nunique() <= 2 and col not in ['encounter_id', 'patient_id', 'start_date']]
-print(f"\n✅ Colonnes binaires détectées ({len(binary_cols)}): Déjà encodées")
-
-
-# %%
-# CELL 7: EDA - Statistical Summary
-print("📈 === STATISTIQUES DESCRIPTIVES ===\n")
-
-# Numeric columns only
-numeric_cols = df_raw.select_dtypes(include=[np.number]).columns.tolist()
-print(df_raw[numeric_cols].describe().T)
-
-# Check for outliers in vital signs
-vital_cols = [col for col in df_raw.columns if col.startswith('vit_')]
-print(f"\n🩺 Colonnes de signes vitaux: {vital_cols}")
-
-
-# %%
-# CELL 7.5: Correlation Analysis
-print("\n🔗 === ANALYSE DE CORRÉLATION ===\n")
-
-# Calculate correlation matrix for numeric features
-numeric_df = df_raw.select_dtypes(include=[np.number])
-correlation_matrix = numeric_df.corr()
-
-# Plot correlation heatmap
-plt.figure(figsize=(20, 16))
-sns.heatmap(
-    correlation_matrix, 
-    annot=False,  # Don't show values (too many features)
-    cmap='coolwarm', 
-    center=0,
-    vmin=-1, 
-    vmax=1,
-    square=True,
-    linewidths=0.5,
-    cbar_kws={"shrink": 0.8}
-)
-plt.title('Feature Correlation Heatmap - Readmission Prediction', fontsize=16, fontweight='bold')
-plt.tight_layout()
-plt.show()
-
-# Show top correlations with target
-if TARGET_COL in correlation_matrix.columns:
-    target_corr = correlation_matrix[TARGET_COL].sort_values(ascending=False)
-    print(f"\n📊 Top 15 correlations with {TARGET_COL}:")
-    print(target_corr.head(15))
-    print(f"\n📊 Bottom 15 correlations with {TARGET_COL}:")
-    print(target_corr.tail(15))
-    
-    # Plot top correlations
-    plt.figure(figsize=(10, 8))
-    top_features = pd.concat([target_corr.head(15), target_corr.tail(15)]).drop(TARGET_COL)
-    top_features.sort_values().plot(kind='barh', color=['red' if x < 0 else 'green' for x in top_features])
-    plt.title(f'Top Features Correlated with {TARGET_COL}', fontsize=14, fontweight='bold')
-    plt.xlabel('Correlation Coefficient')
-    plt.tight_layout()
-    plt.show()
-
-
-# %%
-# CELL 8: Data Cleaning - Drop High-Null Columns
-print("🧹 === NETTOYAGE DES DONNÉES ===\n")
-
-df = df_raw.copy()
-
-# Drop columns with >90% null
-null_percentages = (df.isnull().sum() / len(df) * 100)
-cols_to_drop_null = null_percentages[null_percentages > NULL_THRESHOLD * 100].index.tolist()
-
-if cols_to_drop_null:
-    print(f"❌ Suppression de {len(cols_to_drop_null)} colonnes (>{NULL_THRESHOLD*100}% null):")
-    print(cols_to_drop_null)
-    df = df.drop(columns=cols_to_drop_null)
-else:
-    print(f"✅ Aucune colonne avec >{NULL_THRESHOLD*100}% de valeurs manquantes")
-
-print(f"\n📊 Shape après suppression: {df.shape}")
-
-
-# %%
-# CELL 9: Data Cleaning - Drop Identifier Columns
-print("🗑️ Suppression des colonnes identifiantes...")
-
-cols_to_drop_ids = ['encounter_id', 'patient_id', 'start_date']
-cols_to_drop_ids = [c for c in cols_to_drop_ids if c in df.columns]
-
-if cols_to_drop_ids:
-    print(f"❌ Suppression: {cols_to_drop_ids}")
-    df = df.drop(columns=cols_to_drop_ids)
-
-print(f"✅ Shape finale: {df.shape}")
-
-
-# %%
-# CELL 10: Encoding Check & Feature Engineering
-print("🔧 === VÉRIFICATION DE L'ENCODAGE ===\n")
-
-# Check if categorical columns exist (non-numeric, non-binary)
-categorical_cols = df.select_dtypes(include=['object']).columns.tolist()
-categorical_cols = [col for col in categorical_cols if col != TARGET_COL]
-
-if categorical_cols:
-    print(f"⚠️ Colonnes catégorielles détectées: {categorical_cols}")
-    print("Encodage requis (One-Hot ou Label Encoding)")
-    
-    # Example: One-hot encoding
-    # df = pd.get_dummies(df, columns=categorical_cols, drop_first=True)
-    # print(f"✅ Encodage appliqué. Nouvelles colonnes: {df.shape[1]}")
-else:
-    print("✅ Toutes les colonnes sont déjà numériques/binaires")
-
-print(f"\n📋 Colonnes finales ({len(df.columns)}):")
-print(df.columns.tolist())
-
-
-# %%
-# CELL 11: Missing Value Imputation Strategy
-print("🔧 === TRAITEMENT DES VALEURS MANQUANTES RESTANTES ===\n")
-
-remaining_nulls = df.isnull().sum()
-cols_with_nulls = remaining_nulls[remaining_nulls > 0]
-
-if len(cols_with_nulls) > 0:
-    print(f"⚠️ Colonnes avec nulls restants:")
-    print(cols_with_nulls)
-    
-    # Strategy for vital signs: median imputation or leave as NaN (XGBoost handles it)
-    print("\n🩺 Stratégie pour vit_*: Laisser NaN (XGBoost supporte nativement)")
-    print("   Alternative: df[vital_cols] = df[vital_cols].fillna(df[vital_cols].median())")
-    
-    # Uncomment to impute:
-    # vital_cols = [col for col in df.columns if col.startswith('vit_')]
-    # df[vital_cols] = df[vital_cols].fillna(df[vital_cols].median())
-    # print("✅ Imputation médiane appliquée aux signes vitaux")
-else:
-    print("✅ Aucune valeur manquante restante")
-
-print(f"\n📊 Dataset final prêt: {df.shape}")
-df.head()
-
-
-# %%
-# CELL 11.5: Feature Selection - Remove Constants
-print("🔧 === SÉLECTION DES FEATURES ===\n")
-
-# Remove constant columns (0 variance)
-constant_cols = [col for col in df.columns 
-                if df[col].nunique() <= 1 and col != TARGET_COL]
-if constant_cols:
-    print(f"❌ Constantes supprimées: {constant_cols}")
-    df = df.drop(columns=constant_cols)
-
-# Remove near-constant (<1% positive)
-low_var_cols = [col for col in df.columns 
-               if (df[col].sum() / len(df) < 0.01) and col != TARGET_COL]
-print(f"ℹ️ Faible variance (<1%): {low_var_cols}")
-
-print(f"✅ Features finales: {df.shape[1]-1}")
-
-
-# %%
-# CELL 12: Train/Val/Test Split (60/20/20)
-print("✂️ === SÉPARATION TRAIN/VAL/TEST ===\n")
-
-if TARGET_COL not in df.columns:
-    raise ValueError(f"❌ Erreur : La colonne '{TARGET_COL}' est absente !")
-
-X = df.drop(columns=[TARGET_COL])
-y = df[TARGET_COL]
-
-print(f"📊 Features: {X.shape[1]}, Samples: {X.shape[0]}")
-
-# First split: 80% train+val, 20% test
-X_temp, X_test, y_temp, y_test = train_test_split(
-    X, y, test_size=0.2, random_state=42, stratify=y
-)
-
-# Second split: 75% of temp (60% total) train, 25% of temp (20% total) val
-X_train, X_val, y_train, y_val = train_test_split(
-    X_temp, y_temp, test_size=0.25, random_state=42, stratify=y_temp
-)
-
+print(f"✅ Dataset chargé et divisé en {time.time() - start_time:.2f}s")
 print(f"✅ Train: {X_train.shape[0]} | Val: {X_val.shape[0]} | Test: {X_test.shape[0]}")
 print(f"📊 Train distribution:\n{y_train.value_counts(normalize=True).round(3)}")
 print(f"📊 Val distribution:\n{y_val.value_counts(normalize=True).round(3)}")
+
 
 
 # %%
@@ -292,19 +57,19 @@ print(f"🚀 Initialisation de XGBoost sur {device.upper()}...")
 model = xgb.XGBClassifier(
     device=device,
     tree_method="hist",
-    n_estimators=500,
-    learning_rate=0.03,
-    max_depth=4,              # Reduced from 6 to prevent overfitting
-    subsample=0.7,            # Reduced from 0.8 for more regularization
-    colsample_bytree=0.7,     # Reduced from 0.8 for more regularization
+    n_estimators=445,
+    learning_rate=0.01879,
+    max_depth=5,
+    subsample=0.6037,
+    colsample_bytree=0.6366,
     objective='binary:logistic',
     eval_metric='auc',
     early_stopping_rounds=50,
     missing=float('nan'),
-    reg_alpha=1.0,            # L1 regularization
-    reg_lambda=5.0,           # L2 regularization (increased for better generalization)
-    gamma=0.5,                # Minimum loss reduction (higher = more conservative)
-    min_child_weight=5        # Minimum sum of instance weight (prevents small leaves)
+    reg_alpha=1.3858,
+    reg_lambda=3.5293,
+    gamma=0.6626,
+    min_child_weight=9
 )
 
 print("✅ Modèle configuré!")
@@ -379,7 +144,7 @@ axes[1,0].set_title('Overfitting Gap (Train-Test AUC)')
 axes[1,0].set_ylabel('AUC Gap'); axes[1,0].grid(True, alpha=0.3)
 
 # 4. Feature Importance
-feature_imp = pd.DataFrame({'feature': X.columns, 'importance': model.feature_importances_}).sort_values('importance', ascending=False).head(10)
+feature_imp = pd.DataFrame({'feature': X_train.columns, 'importance': model.feature_importances_}).sort_values('importance', ascending=False).head(10)
 sns.barplot(data=feature_imp, y='feature', x='importance', ax=axes[1,1])
 axes[1,1].set_title('Top 10 Features')
 
