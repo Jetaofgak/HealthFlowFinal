@@ -5,7 +5,7 @@ import numpy as np
 from sklearn.ensemble import RandomForestClassifier, AdaBoostClassifier
 from sklearn.tree import DecisionTreeClassifier
 import xgboost as xgb
-from sklearn.metrics import f1_score
+from sklearn.metrics import f1_score, log_loss
 from utils.data_loader import load_and_preprocess_data, get_train_val_test_splits
 
 def objective(trial, model_name, data_pack):
@@ -58,6 +58,21 @@ def objective(trial, model_name, data_pack):
     y_train_pred = model.predict(X_train)
     y_val_pred = model.predict(X_val)
     
+    # Calculate Probabilities for Log Loss
+    try:
+        y_train_prob = model.predict_proba(X_train)
+        y_val_prob = model.predict_proba(X_val)
+        train_loss = log_loss(y_train, y_train_prob)
+        val_loss = log_loss(y_val, y_val_prob)
+        
+        # Store as user attributes so we can retrieve them later
+        trial.set_user_attr("train_loss", train_loss)
+        trial.set_user_attr("val_loss", val_loss)
+    except:
+        # Some models might fail predict_proba or have issues
+        trial.set_user_attr("train_loss", -1.0)
+        trial.set_user_attr("val_loss", -1.0)
+
     train_f1 = f1_score(y_train, y_train_pred)
     val_f1 = f1_score(y_val, y_val_pred)
     
