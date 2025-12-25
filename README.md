@@ -52,6 +52,7 @@ python3 load_synthea_to_db.py synthea_output/fhir
 ## 📊 Architecture
 
 ```
+FHIR Data → ProxyFHIR → DeID → Featurizer (BioBERT) → ML-Predictor (XGBoost) → ScoreAPI
                                                                 ↓
                                                          AuditFairness
 ```
