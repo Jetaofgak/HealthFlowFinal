@@ -290,12 +290,6 @@ curl http://localhost:5003/health  # ScoreAPI
 curl http://localhost:8080/health  # API Gateway
 ```
 
-## 📚 Documentation
-
-- **Setup Guide**: [docs/SYNTHEA_SETUP.md](docs/SYNTHEA_SETUP.md)
-- **Quick Start**: [docs/QUICK_START_SYNTHEA.md](docs/QUICK_START_SYNTHEA.md)
-- **Project Overview**: [project.md](project.md)
-- **Dashboard Issue Fix**: [PROBLEM.md](PROBLEM.md) - Troubleshooting dashboard zeros/N/A values
 
 ## ⚠️ Known Limitations
 
@@ -429,21 +423,7 @@ If the FHIR sync endpoint fails with 500 errors:
 3. **Timeout for Large Requests**: Requests > 20 patients may timeout
    - **Solution**: Use smaller batch sizes (5-10 patients) or use local generation workflow
 
-**Test Sync**:
 
-```bash
-# Test with small dataset
-curl -X POST "http://localhost:8085/api/v1/fhir/sync/bulk?count=5"
-
-# Should return:
-# {"synced":5,"failed":0,"totalResources":~250,"status":"success"}
-```
-
-**Check Logs**:
-
-```bash
-docker-compose logs --tail=50 proxy-fhir
-```
 
 ## 👥 Team
 
@@ -455,4 +435,4 @@ docker-compose logs --tail=50 proxy-fhir
 
 ## 📄 License
 
-Academic project - EMSI 2026
+Academic project - EMSI 2025/2025
