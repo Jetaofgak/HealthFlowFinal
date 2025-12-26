@@ -5,57 +5,57 @@ Microservices-based healthcare analytics platform for predicting patient readmis
 ## 🚀 Quick Start
 
 ### 1. Start All Services
+JENKINS
 
-```bash
-# Start all microservices with Docker Compose
-docker-compose up -d
 
-# Verify all services are running
-docker-compose ps
-```
 
-### 2. Generate Synthetic Patient Data with Clinical Notes
+<img width="1894" height="277" alt="Screenshot 2025-12-25 130250" src="https://github.com/user-attachments/assets/ac5bc5aa-7017-4357-9fa5-6ad8d5c38320" />
 
-```bash
-cd scripts
 
-# Generate 100 test patients with clinical notes
-./generate_synthea_data.sh 100
 
-# For production dataset (10,000 patients)
-./generate_synthea_data.sh 10000
-```
+<img width="1906" height="519" alt="Screenshot 2025-12-25 130734" src="https://github.com/user-attachments/assets/dbf6029f-e091-44fd-9cc9-b74e8f4085ea" />
 
-### 3. Load Data into PostgreSQL
 
-```bash
-# Load FHIR data and extract clinical notes
-python3 load_synthea_to_db.py synthea_output/fhir
-```
 
-**Expected Output**:
+<img width="1913" height="519" alt="Screenshot 2025-12-25 130751" src="https://github.com/user-attachments/assets/63023ed4-3906-4ae8-823f-43a9d29d9fd8" />
 
-```
-✅ Loaded 100 patients with 7,000+ clinical notes
-📊 Database Statistics:
-   Patients loaded: 100
-   Clinical notes: 7,234
-   Avg note length: 1,486 characters
-```
 
-### 4. Access Services
 
-- **Dashboard**: http://localhost:3000
-- **API Gateway**: http://localhost:8080
-- **Health Status**: http://localhost:3000/health
+<img width="1913" height="526" alt="Screenshot 2025-12-25 130803" src="https://github.com/user-attachments/assets/35226cf1-2f2f-4c47-9f3d-ffa12e7b4559" />
 
-## 📊 Architecture
 
-```
-FHIR Data → ProxyFHIR → DeID → Featurizer (BioBERT) → ML-Predictor (XGBoost) → ScoreAPI
-                                                                ↓
-                                                         AuditFairness
-```
+<img width="1919" height="447" alt="Screenshot 2025-12-25 130816" src="https://github.com/user-attachments/assets/d072f42c-f98e-4f0f-91c7-915eae033780" />
+
+
+<img width="1895" height="694" alt="Screenshot 2025-12-25 130833" src="https://github.com/user-attachments/assets/0f0852fb-2e20-40b3-9b0e-b4384f0e923f" />
+
+
+<img width="1918" height="536" alt="Screenshot 2025-12-25 130851" src="https://github.com/user-attachments/assets/84d90989-7dab-438d-a2bb-bbddf9afb454" />
+
+
+<img width="1898" height="504" alt="Screenshot 2025-12-25 130904" src="https://github.com/user-attachments/assets/4b382531-6521-4f13-b0cb-98f19c9d0d4b" />
+
+
+
+<img width="1904" height="589" alt="Screenshot 2025-12-25 130919" src="https://github.com/user-attachments/assets/04940551-5c6c-4469-b037-b30cccdc5c64" />
+
+
+<img width="1895" height="651" alt="Screenshot 2025-12-25 130931" src="https://github.com/user-attachments/assets/3c8e9ebc-8a4b-4342-a35d-f69d2448a9b8" />
+
+
+<img width="1901" height="594" alt="Screenshot 2025-12-25 130943" src="https://github.com/user-attachments/assets/50347f86-468f-47f6-9a52-daedf80dc6f2" />
+
+<img width="1904" height="808" alt="Screenshot 2025-12-25 131000" src="https://github.com/user-attachments/assets/8c020eb4-2de7-43ff-bd58-ef65a09da6ec" />
+
+<img width="1904" height="579" alt="Screenshot 2025-12-25 131020" src="https://github.com/user-attachments/assets/c83ec59c-bd24-48e0-a563-9f70199187d1" />
+
+
+<img width="1898" height="759" alt="Screenshot 2025-12-25 131031" src="https://github.com/user-attachments/assets/9e0d6b3f-55c3-4f39-b3f1-e39837c95a3f" />
+
+
+<img width="1903" height="598" alt="Screenshot 2025-12-25 131042" src="https://github.com/user-attachments/assets/e4b83583-0a86-45b7-8d73-e04cf8a585d0" />
+
+
 
 ## 🎥 Project Demo
 
