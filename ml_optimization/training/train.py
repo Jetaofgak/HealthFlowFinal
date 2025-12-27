@@ -11,6 +11,20 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 import joblib
 
+"""
+TRAINING SCRIPT
+---------------
+This script is responsible for training the FINAL production model using the best hyperparameters
+found during the Optuna optimization phase (see optuna_grid_search.py).
+
+It performs:
+1. Data Loading & Preprocessing
+2. Model Initialization (with specific optimized params)
+3. Training on the full training set
+4. Detailed Evaluation (Confusion Matrix, ROC-AUC, Feature Importance)
+5. Saving the model for the backend API
+"""
+
 # %%
 # CELL 2: Configuration
 CSV_PATH = r"../../dataset_with_nlp_features.csv"  # Encounter-level dataset (146K samples) - reduces overfitting
@@ -18,6 +32,8 @@ MODEL_FILENAME = "adaboost_readmission_model.pkl"  # Updated to AdaBoost
 TARGET_COL = 'label_readmission'
 
 # Optuna-optimized hyperparameters (Trial #155)
+# NOTE: These values are copied from the output of `optuna_grid_search.py`
+# We use the parameters that gave the best balance of High Validation F1 and Low Overfitting Gap.
 # Val F1: 0.7778, Gap: 0.0251 (Excellent generalization!)
 BEST_N_ESTIMATORS = 119
 BEST_LEARNING_RATE = 0.43756465809513756
@@ -100,6 +116,9 @@ val_auc = roc_auc_score(y_val, y_val_prob)
 
 gap_f1 = abs(train_f1 - val_f1)
 gap_auc = abs(train_auc - val_auc)
+# The 'Gap' is a crucial metric:
+# Small gap (< 0.05) = Good generalization
+# Large gap (> 0.10) = Overfitting (model memorized training data)
 
 print(f"Train F1:  {train_f1:.4f}")
 print(f"Val F1:    {val_f1:.4f}")

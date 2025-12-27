@@ -9,6 +9,12 @@ from sklearn.metrics import f1_score, log_loss
 from utils.data_loader import load_and_preprocess_data, get_train_val_test_splits
 
 def objective(trial, model_name, data_pack, strong_regularization=False):
+    """
+    Optuna Objective Function:
+    - Trials suggestions for hyperparameters
+    - Trains the model
+    - Returns metrics (Train F1, Val F1) to be optimized
+    """
     # Select correct dataset based on model type
     if model_name == "XGBoost":
         X_train, y_train, X_val, y_val = data_pack['xgb']
@@ -111,6 +117,13 @@ if __name__ == "__main__":
                         help="Use stronger regularization for XGBoost (recommended to reduce overfitting)")
     args = parser.parse_args()
 
+    # ---------------------------------------------------------
+    # 1. Load Data
+    # We load two versions of the dataset:
+    # - Sklearn models (RandomForest, AdaBoost, DT) need imputed data (no NaNs).
+    # - XGBoost can handle NaNs natively, often yielding better results without imputation.
+    # ---------------------------------------------------------
+
     # Load Data Twice
     print("⏳ Loading data for Sklearn models (Imputed)...")
     df_sk, _ = load_and_preprocess_data(impute_missing=True)
@@ -148,6 +161,12 @@ if __name__ == "__main__":
     print(f"\n🎯 Optimizing models: {', '.join(models)}")
     print(f"📊 Trials per model: {args.trials}\n")
     print("Starting optimization...")
+
+    # ---------------------------------------------------------
+    # 2. Run Optimization
+    # We use Multi-Objective Optimization (maximize Train F1 AND maximize Val F1).
+    # This helps visualize the trade-off between learning and overfitting.
+    # ---------------------------------------------------------
 
     for model_name in models:
         study_name = f"{model_name}_train_val_f1_optimization"
