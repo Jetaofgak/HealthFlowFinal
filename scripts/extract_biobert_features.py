@@ -187,8 +187,8 @@ def main():
     logger.info("=" * 50)
     
     # Configuration - Fixed filenames
-    STRUCTURED_CSV = "../dataset_structured.csv"  # From export_structured_features.py
-    OUTPUT_CSV = "../dataset_with_nlp.csv"  # Final dataset for train.py
+    STRUCTURED_CSV = "dataset_structured.csv"  # From export_structured_features.py (in root dir)
+    OUTPUT_CSV = "dataset_with_nlp.csv"  # Final dataset for train.py (in root dir)
     
     try:
         # 1. Initialize BioBERT extractor
