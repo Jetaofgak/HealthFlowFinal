@@ -84,6 +84,35 @@ class ClinicalNLPExtractor:
         
         return features
     
+    def extract_features_batch(self, patient_texts: List[str], batch_size: int = 64) -> List[Dict]:
+        """
+        Extract features for a batch of patients
+        """
+        # Call batch method in service
+        entities_batch = self.biobert.extract_medical_entities_batch(patient_texts, batch_size=batch_size)
+        
+        results = []
+        for i, entities in enumerate(entities_batch):
+            # Extract features from entities
+            features = {
+                'nlp_num_conditions': len(entities.get('conditions', [])),
+                'nlp_has_chf': int(self._has_condition(entities, ['chf', 'heart failure', 'congestive'])),
+                'nlp_has_copd': int(self._has_condition(entities, ['copd', 'chronic obstructive'])),
+                'nlp_has_ckd': int(self._has_condition(entities, ['ckd', 'chronic kidney', 'renal'])),
+                'nlp_has_diabetes': int(self._has_condition(entities, ['diabetes', 'dm2', 'diabetic'])),
+                'nlp_has_hypertension': int(self._has_condition(entities, ['hypertension', 'htn', 'high blood pressure'])),
+                
+                'nlp_num_medications': len(entities.get('medications', [])),
+                'nlp_polypharmacy': int(len(entities.get('medications', [])) >= 5),
+                
+                'nlp_num_symptoms': len(entities.get('symptoms', [])),
+                'nlp_has_pain': int(self._has_symptom(entities, ['pain', 'ache', 'discomfort'])),
+                'nlp_has_dyspnea': int(self._has_symptom(entities, ['dyspnea', 'shortness of breath', 'sob'])),
+            }
+            results.append(features)
+            
+        return results
+
     def _has_condition(self, entities: Dict, keywords: List[str]) -> bool:
         """Check if any keyword appears in conditions"""
         conditions_text = ' '.join(entities.get('conditions', [])).lower()
@@ -141,23 +170,48 @@ def load_structured_features(csv_path: str) -> pd.DataFrame:
 
 
 def extract_nlp_features(notes_df: pd.DataFrame, extractor: ClinicalNLPExtractor) -> pd.DataFrame:
-    """Extract NLP features for all patients"""
-    logger.info("Extracting NLP features from clinical notes...")
+    """Extract NLP features for all patients using BATCH processing"""
+    logger.info("Extracting NLP features from clinical notes (Batch Mode)...")
     
     # Group notes by patient
+    logger.info("Grouping notes by patient...")
     patient_notes = notes_df.groupby('patient_id')['note_text'].apply(list).reset_index()
     
+    # Prepare inputs
+    patient_ids = patient_notes['patient_id'].tolist()
+    combined_texts = []
+    
+    # Metadata for post-processing
+    text_metadatas = []
+    
+    for _, row in patient_notes.iterrows():
+        notes = row['note_text']
+        combined = " ".join([note for note in notes if note])
+        combined_texts.append(combined)
+        
+        # Calculate simple text stats here (cpu cheap)
+        text_metadatas.append({
+            'nlp_note_length': len(combined),
+            'nlp_note_count': len(notes),
+            'nlp_avg_note_length': len(combined) / len(notes) if notes else 0
+        })
+    
+    # Process in batches
+    BATCH_SIZE = 64
     nlp_features_list = []
     
-    for _, row in tqdm(patient_notes.iterrows(), total=len(patient_notes), desc="Processing patients"):
-        patient_id = row['patient_id']
-        notes = row['note_text']
+    for i in tqdm(range(0, len(combined_texts), BATCH_SIZE), desc="Processing batches"):
+        batch_texts = combined_texts[i : i + BATCH_SIZE]
         
-        # Extract NLP features
-        nlp_features = extractor.extract_features_from_notes(notes)
-        nlp_features['patient_id'] = patient_id
+        # GPU Batch Extraction
+        batch_features = extractor.extract_features_batch(batch_texts, batch_size=BATCH_SIZE)
         
-        nlp_features_list.append(nlp_features)
+        # Add metadata and patient_id
+        for j, feats in enumerate(batch_features):
+            global_idx = i + j
+            feats.update(text_metadatas[global_idx])
+            feats['patient_id'] = patient_ids[global_idx]
+            nlp_features_list.append(feats)
     
     nlp_df = pd.DataFrame(nlp_features_list)
     logger.info(f"Extracted NLP features for {len(nlp_df)} patients")

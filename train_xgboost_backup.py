@@ -57,18 +57,18 @@ print(f"🚀 Initialisation de XGBoost sur {device.upper()}...")
 model = xgb.XGBClassifier(
     device=device,
     tree_method="hist",
-    n_estimators=445,
-    learning_rate=0.01879,
+    n_estimators=667,
+    learning_rate=0.08136324223569548,
     max_depth=5,
-    subsample=0.6037,
-    colsample_bytree=0.6366,
+    subsample=0.689209825278097,
+    colsample_bytree=0.72327888220896,
     objective='binary:logistic',
     eval_metric='auc',
     early_stopping_rounds=50,
     missing=float('nan'),
-    reg_alpha=1.3858,
-    reg_lambda=3.5293,
-    gamma=0.6626,
+    reg_alpha=1.7749145784633522,
+    reg_lambda=6.56042094848319,
+    gamma=1.2238697724183818,
     min_child_weight=9
 )
 

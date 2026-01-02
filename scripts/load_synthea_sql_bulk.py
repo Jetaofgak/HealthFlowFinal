@@ -1,14 +1,16 @@
 #!/usr/bin/env python3
 """
-Ultra-fast SQL-based FHIR data loader using PostgreSQL COPY and JSON functions
-10-20x faster than Python processing, minimal memory usage
+Ultra-fast SQL-based FHIR data loader (Parallel Version)
+Uses Multiprocessing (4 cores) + PostgreSQL COPY + JSON functions
 """
 
 import os
 import sys
 import psycopg2
+from psycopg2 import extras
 from pathlib import Path
-import subprocess
+import multiprocessing
+import time
 
 # Database configuration
 DB_CONFIG = {
@@ -28,13 +30,12 @@ def connect_db():
         print(f"❌ Database connection failed: {e}")
         sys.exit(1)
 
-def create_tables_and_functions(conn):
-    """Create tables and SQL functions for bulk processing"""
+def create_tables_and_staging(conn):
+    """Create tables and shared staging area"""
     cursor = conn.cursor()
+    print("📋 Creating tables and staging area...")
 
-    print("📋 Creating tables and functions...")
-
-    # Create tables
+    # Main tables
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS clinical_notes (
             id SERIAL PRIMARY KEY,
@@ -45,9 +46,7 @@ def create_tables_and_functions(conn):
             note_text TEXT NOT NULL,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         );
-
-        CREATE INDEX IF NOT EXISTS idx_clinical_notes_patient
-        ON clinical_notes(patient_id);
+        CREATE INDEX IF NOT EXISTS idx_clinical_notes_patient ON clinical_notes(patient_id);
     """)
 
     cursor.execute("""
@@ -57,26 +56,52 @@ def create_tables_and_functions(conn):
             bundle_data JSONB NOT NULL,
             loaded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         );
-
-        CREATE INDEX IF NOT EXISTS idx_fhir_bundles_patient
-        ON fhir_bundles(patient_id);
+        CREATE INDEX IF NOT EXISTS idx_fhir_bundles_patient ON fhir_bundles(patient_id);
     """)
 
-    # Create temporary table for staging JSON files
+    # Shared Staging Table (UNLOGGED for speed, but visible to all sessions)
     cursor.execute("""
-        DROP TABLE IF EXISTS temp_json_staging;
-        CREATE TEMPORARY TABLE temp_json_staging (
+        DROP TABLE IF EXISTS json_staging;
+        CREATE UNLOGGED TABLE json_staging (
             file_path TEXT,
-            bundle_data JSONB
+            bundle_data TEXT
         );
     """)
-
     conn.commit()
-    print("✅ Tables and staging area ready")
+    print("✅ Tables ready")
 
-def bulk_load_json_files(conn, fhir_dir: str):
-    """Load all JSON files using SQL COPY and bulk processing"""
-    cursor = conn.cursor()
+def worker_load_batch(file_batch):
+    """Worker function to load a batch of files"""
+    try:
+        # Each worker needs its own connection
+        conn = psycopg2.connect(**DB_CONFIG)
+        cursor = conn.cursor()
+        
+        values = []
+        for json_file in file_batch:
+            try:
+                with open(json_file, 'r', encoding='utf-8') as f:
+                    values.append((str(json_file), f.read()))
+            except Exception as e:
+                print(f"⚠️  Skipped {json_file}: {e}")
+
+        if values:
+            extras.execute_values(
+                cursor,
+                "INSERT INTO json_staging (file_path, bundle_data) VALUES %s",
+                values,
+                template="(%s, %s)"
+            )
+            conn.commit()
+        
+        conn.close()
+        return len(values)
+    except Exception as e:
+        print(f"❌ Worker error: {e}")
+        return 0
+
+def bulk_load_json_parallel(conn, fhir_dir: str):
+    """Parallel load controller"""
     fhir_path = Path(fhir_dir)
     json_files = list(fhir_path.glob('*.json'))
 
@@ -86,164 +111,124 @@ def bulk_load_json_files(conn, fhir_dir: str):
 
     total_files = len(json_files)
     print(f"📂 Found {total_files} FHIR bundle files")
-    print(f"🚀 Starting SQL bulk load (streaming mode)...")
-
-    # Process files in batches to avoid command line length limits
-    batch_size = 1000
+    
+    # 4 Cores recommended by user
+    num_processes = 4
+    print(f"🚀 Starting Parallel Load on {num_processes} cores...")
+    
+    # Split into chunks
+    chunk_size = 250 # Adjust chunk size as needed
+    chunks = [json_files[i:i + chunk_size] for i in range(0, total_files, chunk_size)]
+    
+    start_time = time.time()
+    
+    # Run workers
     processed = 0
-
-    for i in range(0, total_files, batch_size):
-        batch_files = json_files[i:i + batch_size]
-
-        # Insert files into staging table using streaming
-        print(f"   Loading batch {i//batch_size + 1} ({len(batch_files)} files)...")
-
-        for json_file in batch_files:
-            try:
-                # Read and insert JSON directly
-                with open(json_file, 'r') as f:
-                    json_content = f.read()
-
-                cursor.execute(
-                    "INSERT INTO temp_json_staging (file_path, bundle_data) VALUES (%s, %s::jsonb)",
-                    (str(json_file), json_content)
-                )
-                processed += 1
-
-                if processed % 100 == 0:
-                    print(f"      Staged {processed}/{total_files} files... ({processed*100//total_files}%)")
-
-            except Exception as e:
-                print(f"⚠️  Skipped {json_file}: {e}")
-                continue
-
-        conn.commit()
-
-    print(f"✅ Staged {processed} files into database")
-
-    # Now process all staged data using pure SQL
-    print("🔄 Processing staged data with SQL (extracting bundles and notes)...")
-
-    # Extract and insert FHIR bundles
+    with multiprocessing.Pool(processes=num_processes) as pool:
+        for batch_count in pool.imap_unordered(worker_load_batch, chunks):
+            processed += batch_count
+            if processed % 1000 == 0 or processed == total_files:
+                print(f"      Staged {processed}/{total_files} files... ({processed*100//total_files}%)")
+    
+    print(f"✅ Staged {processed} files in {time.time() - start_time:.2f}s")
+    
+    # Final SQL Processing
+    print("🔄 Processing staged data (SQL Extraction)...")
+    cursor = conn.cursor()
+    
+    # Extract Bundles
     cursor.execute("""
         INSERT INTO fhir_bundles (patient_id, bundle_data)
         SELECT
-            (patient_entry->>'id')::varchar(255) as patient_id,
-            bundle_data
-        FROM temp_json_staging,
+            (patient_entry.resource->>'id')::varchar(255) as patient_id,
+            bundle_data::jsonb
+        FROM json_staging,
         LATERAL (
-            SELECT jsonb_array_elements(bundle_data->'entry') as entry
+            SELECT jsonb_array_elements(bundle_data::jsonb->'entry') as entry
         ) entries,
         LATERAL (
             SELECT entry->'resource' as resource
             WHERE (entry->'resource'->>'resourceType') = 'Patient'
         ) patient_entry
-        WHERE (patient_entry->>'id') IS NOT NULL
+        WHERE (patient_entry.resource->>'id') IS NOT NULL
     """)
-
     bundles_inserted = cursor.rowcount
     print(f"✅ Inserted {bundles_inserted} FHIR bundles")
 
-    # Extract and insert clinical notes using SQL JSON functions
+    # Extract Notes
     cursor.execute("""
         INSERT INTO clinical_notes (patient_id, encounter_id, note_date, note_type, note_text)
         SELECT
             patient_id,
-            doc_entry->>'id' as encounter_id,
-            (doc_entry->>'date')::timestamp as note_date,
-            COALESCE(doc_entry->'type'->>'text', 'Clinical Note') as note_type,
+            doc_entry.resource->>'id' as encounter_id,
+            (doc_entry.resource->>'date')::timestamp as note_date,
+            COALESCE(doc_entry.resource->'type'->>'text', 'Clinical Note') as note_type,
             convert_from(decode(content->'attachment'->>'data', 'base64'), 'UTF8') as note_text
         FROM (
             SELECT
-                (patient_entry->>'id')::varchar(255) as patient_id,
+                (patient_entry.resource->>'id')::varchar(255) as patient_id,
                 bundle_data
-            FROM temp_json_staging,
+            FROM json_staging,
             LATERAL (
-                SELECT jsonb_array_elements(bundle_data->'entry') as entry
+                SELECT jsonb_array_elements(bundle_data::jsonb->'entry') as entry
             ) entries,
             LATERAL (
                 SELECT entry->'resource' as resource
                 WHERE (entry->'resource'->>'resourceType') = 'Patient'
             ) patient_entry
-            WHERE (patient_entry->>'id') IS NOT NULL
+            WHERE (patient_entry.resource->>'id') IS NOT NULL
         ) patients,
         LATERAL (
-            SELECT jsonb_array_elements(bundle_data->'entry') as entry
+            SELECT jsonb_array_elements(bundle_data::jsonb->'entry') as entry
         ) doc_entries,
         LATERAL (
             SELECT doc_entries.entry->'resource' as resource
             WHERE (doc_entries.entry->'resource'->>'resourceType') = 'DocumentReference'
         ) doc_entry,
         LATERAL (
-            SELECT jsonb_array_elements(doc_entry->'content') as content
+            SELECT jsonb_array_elements(doc_entry.resource->'content') as content
         ) contents
         WHERE content->'attachment'->>'data' IS NOT NULL
     """)
-
     notes_inserted = cursor.rowcount
-    print(f"✅ Extracted {notes_inserted} clinical notes")
-
+    
+    # Cleanup
+    cursor.execute("TRUNCATE TABLE json_staging")
     conn.commit()
-
-    # Cleanup staging table
-    cursor.execute("DROP TABLE temp_json_staging")
-    conn.commit()
-
+    
     return bundles_inserted, notes_inserted
 
 def show_statistics(conn):
-    """Display loading statistics"""
     cursor = conn.cursor()
-
     cursor.execute("SELECT COUNT(*) FROM fhir_bundles")
-    bundle_count = cursor.fetchone()[0]
-
+    b_count = cursor.fetchone()[0]
     cursor.execute("SELECT COUNT(*) FROM clinical_notes")
-    note_count = cursor.fetchone()[0]
-
-    cursor.execute("SELECT AVG(LENGTH(note_text)) FROM clinical_notes WHERE note_text IS NOT NULL")
-    avg_note_length = cursor.fetchone()[0]
-
-    print("\n📊 Database Statistics:")
-    print(f"   FHIR bundles: {bundle_count}")
-    print(f"   Clinical notes: {note_count}")
-    print(f"   Avg note length: {int(avg_note_length) if avg_note_length else 0} characters")
+    n_count = cursor.fetchone()[0]
+    print(f"\n📊 Totals: {b_count} Bundles | {n_count} Notes")
 
 def main():
-    """Main execution"""
     if len(sys.argv) < 2:
         print("Usage: python3 load_synthea_sql_bulk.py <synthea_fhir_directory>")
-        print("Example: python3 load_synthea_sql_bulk.py synthea_output/fhir")
         sys.exit(1)
 
     fhir_dir = sys.argv[1]
-
     if not os.path.exists(fhir_dir):
         print(f"❌ Directory not found: {fhir_dir}")
         sys.exit(1)
 
-    print("🏥 HealthFlow-MS: SQL Bulk FHIR Data Loader")
-    print("=" * 50)
-    print("⚡ Using PostgreSQL native JSON processing")
-    print("=" * 50)
-
     conn = connect_db()
-    print("✅ Connected to database")
-
     try:
-        create_tables_and_functions(conn)
-        bulk_load_json_files(conn, fhir_dir)
+        create_tables_and_staging(conn)
+        bulk_load_json_parallel(conn, fhir_dir)
         show_statistics(conn)
-
     except Exception as e:
-        print(f"\n❌ Error during bulk load: {e}")
+        print(f"ERROR: {e}")
         conn.rollback()
-        raise
     finally:
         conn.close()
 
-    print("\n🎉 SQL bulk loading complete!")
-    print("💡 This method uses ~90% less memory than Python processing")
-
 if __name__ == '__main__':
+    # Needed for Windows multiprocessing
+    multiprocessing.freeze_support()
     main()
+

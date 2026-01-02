@@ -2,6 +2,12 @@ import argparse
 import optuna
 import pandas as pd
 import numpy as np
+import sys
+import os
+
+# Add root directory to path to allow importing utils
+sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..'))
+
 from sklearn.ensemble import RandomForestClassifier, AdaBoostClassifier
 from sklearn.tree import DecisionTreeClassifier
 import xgboost as xgb
@@ -78,8 +84,10 @@ def objective(trial, model_name, data_pack, strong_regularization=False):
                 'gamma': trial.suggest_float('gamma', 0.0, 1.0),
                 'min_child_weight': trial.suggest_int('min_child_weight', 1, 10)
             }
-        # Use simple CPU for compatibility, change to 'cuda' if GPU available
-        model = xgb.XGBClassifier(**params, random_state=42, n_jobs=-1, device="cpu")
+        # Auto-detect device (GPU support)
+        import torch
+        device = "cuda" if torch.cuda.is_available() else "cpu"
+        model = xgb.XGBClassifier(**params, random_state=42, n_jobs=-1, device=device)
 
     model.fit(X_train, y_train)
     

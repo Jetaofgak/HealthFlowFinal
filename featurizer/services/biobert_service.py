@@ -27,10 +27,15 @@ class BioBERTService:
 
             # Enable MPS acceleration on Apple Silicon (2-5x speedup)
             # Falls back to CPU if MPS not available
-            device = 0 if torch.backends.mps.is_available() else -1
-            if device == 0:
+            # Enable CUDA (NVIDIA) or MPS (Apple) acceleration
+            if torch.cuda.is_available():
+                device = 0
+                logger.info("Using device: CUDA (NVIDIA GPU)")
+            elif torch.backends.mps.is_available():
+                device = 0
                 logger.info("Using device: MPS (Apple Silicon)")
             else:
+                device = -1
                 logger.info("Using device: CPU")
 
             self.ner_pipeline = pipeline(
@@ -168,3 +173,53 @@ class BioBERTService:
         }
 
         return {k: v for k, v in found_entities.items() if v}
+
+    def extract_medical_entities_batch(self, clinical_texts: List[str], batch_size: int = 32) -> List[Dict[str, List[str]]]:
+        """
+        Batch process multiple clinical texts for GPU efficiency
+        """
+        results = []
+        
+        # 1. Simple regex extraction (very fast)
+        regex_results = [self._simple_entity_extraction(text) for text in clinical_texts]
+        
+        if self.ner_pipeline is None:
+            return regex_results
+            
+        try:
+            # 2. Batch NER processing
+            # Proceed only for non-empty texts to save compute
+            valid_indices = [i for i, t in enumerate(clinical_texts) if t and t.strip()]
+            valid_texts = [clinical_texts[i] for i in valid_indices]
+            
+            if not valid_texts:
+                return regex_results
+
+            logger.info(f"Running NER on {len(valid_texts)} texts with batch_size={batch_size}...")
+            
+            # Using pipeline as iterator
+            ner_iterator = self.ner_pipeline(valid_texts, batch_size=batch_size)
+            
+            # Map valid results back to original indices
+            ner_map = {}
+            for idx, ner_result in zip(valid_indices, ner_iterator):
+                diseases = [
+                    entity['word'].strip() 
+                    for entity in ner_result 
+                    if entity.get('entity_group') == 'DISEASE'
+                ]
+                ner_map[idx] = diseases
+                
+            # 3. Merge results
+            for i in range(len(clinical_texts)):
+                merged = regex_results[i].copy()
+                if i in ner_map and ner_map[i]:
+                    existing = merged.get('conditions', [])
+                    merged['conditions'] = list(set(existing + ner_map[i]))
+                results.append(merged)
+                
+            return results
+
+        except Exception as e:
+            logger.error(f"Batch extraction failed: {str(e)}")
+            return regex_results
